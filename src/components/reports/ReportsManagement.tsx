@@ -43,7 +43,7 @@ interface Personnel {
 const ReportsManagement = () => {
   const { toast } = useToast();
   const [reportType, setReportType] = useState<string>('');
-  const [selectedSite, setSelectedSite] = useState<string>('');
+  const [selectedSite, setSelectedSite] = useState<string>('all-sites');
   const [dateRange, setDateRange] = useState({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
@@ -407,7 +407,7 @@ const ReportsManagement = () => {
                   <SelectValue placeholder="Todos los sitios" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los sitios</SelectItem>
+                  <SelectItem value="all-sites">Todos los sitios</SelectItem>
                   {sites.map((site) => (
                     <SelectItem key={site.id} value={site.id}>
                       {site.name}

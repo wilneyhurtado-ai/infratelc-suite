@@ -40,7 +40,7 @@ const ExpensesManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedSite, setSelectedSite] = useState<string>('');
+  const [selectedSite, setSelectedSite] = useState<string>('all-sites');
   const [newExpense, setNewExpense] = useState({
     site_id: '',
     category_id: '',
@@ -376,7 +376,7 @@ const ExpensesManagement = () => {
                   <SelectValue placeholder="Todos los sitios" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los sitios</SelectItem>
+                  <SelectItem value="all-sites">Todos los sitios</SelectItem>
                   {sites.map((site) => (
                     <SelectItem key={site.id} value={site.id}>
                       {site.name}

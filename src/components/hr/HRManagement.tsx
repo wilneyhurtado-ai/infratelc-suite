@@ -402,7 +402,7 @@ const HRManagement = () => {
                       <SelectValue placeholder="Seleccionar sitio (opcional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sin asignar</SelectItem>
+                      <SelectItem value="unassigned">Sin asignar</SelectItem>
                       {sites.map((site) => (
                         <SelectItem key={site.id} value={site.id}>
                           {site.name}
