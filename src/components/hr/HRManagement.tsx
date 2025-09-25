@@ -1,80 +1,229 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import StatsCard from "@/components/ui/stats-card";
-import { 
-  Users, 
-  UserPlus, 
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
-  Calendar,
-  Briefcase
-} from "lucide-react";
+import { Plus, Users, Edit, Trash2, Mail, Phone } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
-interface Employee {
+interface Personnel {
+  id: string;
+  full_name: string;
+  position: string;
+  site_id?: string;
+  salary?: number;
+  hire_date?: string;
+  status: string;
+  email?: string;
+  phone?: string;
+  sites?: { name: string };
+}
+
+interface Site {
   id: string;
   name: string;
-  position: string;
-  site: string;
-  status: "active" | "leave" | "vacation";
-  startDate: string;
-  phone: string;
-  email: string;
-  salary: number;
 }
 
 const HRManagement = () => {
-  // Sample employee data
-  const employees: Employee[] = [
-    {
-      id: "1",
-      name: "Carlos Rodriguez",
-      position: "Supervisor de Obra",
-      site: "Tetillas",
-      status: "active",
-      startDate: "2024-01-15",
-      phone: "+56 9 8765 4321",
-      email: "carlos.rodriguez@infratelc.cl",
-      salary: 1200000
-    },
-    {
-      id: "2",
-      name: "María González",
-      position: "Ingeniera Civil",
-      site: "Isla Riesco", 
-      status: "active",
-      startDate: "2023-11-10",
-      phone: "+56 9 8765 4322",
-      email: "maria.gonzalez@infratelc.cl",
-      salary: 1800000
-    },
-    {
-      id: "3",
-      name: "Pedro Silva",
-      position: "Operador de Equipos",
-      site: "B-55",
-      status: "vacation",
-      startDate: "2024-03-01",
-      phone: "+56 9 8765 4323", 
-      email: "pedro.silva@infratelc.cl",
-      salary: 950000
-    },
-    {
-      id: "4",
-      name: "Ana Martínez",
-      position: "Técnico Eléctrico",
-      site: "Contenedor Petrosismic",
-      status: "active",
-      startDate: "2024-02-20",
-      phone: "+56 9 8765 4324",
-      email: "ana.martinez@infratelc.cl",
-      salary: 1100000
-    }
-  ];
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingPersonnel, setEditingPersonnel] = useState<Personnel | null>(null);
+  const [newPersonnel, setNewPersonnel] = useState({
+    full_name: '',
+    position: '',
+    site_id: '',
+    salary: '',
+    email: '',
+    phone: '',
+    status: 'Activo'
+  });
 
-  const formatCurrency = (amount: number) => {
+  // Fetch personnel
+  const { data: personnel = [], isLoading } = useQuery({
+    queryKey: ['personnel'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('personnel')
+        .select(`
+          *,
+          sites (
+            name
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Personnel[];
+    }
+  });
+
+  // Fetch sites for dropdown
+  const { data: sites = [] } = useQuery({
+    queryKey: ['sites-for-personnel'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sites')
+        .select('id, name')
+        .order('name');
+      
+      if (error) throw error;
+      return data as Site[];
+    }
+  });
+
+  // Create personnel mutation
+  const createPersonnelMutation = useMutation({
+    mutationFn: async (personnelData: any) => {
+      const { data, error } = await supabase
+        .from('personnel')
+        .insert([{
+          full_name: personnelData.full_name,
+          position: personnelData.position,
+          site_id: personnelData.site_id || null,
+          salary: personnelData.salary ? parseFloat(personnelData.salary) : null,
+          email: personnelData.email || null,
+          phone: personnelData.phone || null,
+          status: personnelData.status,
+          hire_date: new Date().toISOString().split('T')[0]
+        }])
+        .select();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      setIsAddDialogOpen(false);
+      setNewPersonnel({
+        full_name: '',
+        position: '',
+        site_id: '',
+        salary: '',
+        email: '',
+        phone: '',
+        status: 'Activo'
+      });
+      toast({
+        title: "Personal registrado",
+        description: "El empleado se ha registrado correctamente.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Error al registrar personal: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Update personnel mutation
+  const updatePersonnelMutation = useMutation({
+    mutationFn: async ({ id, ...personnelData }: any) => {
+      const { data, error } = await supabase
+        .from('personnel')
+        .update({
+          full_name: personnelData.full_name,
+          position: personnelData.position,
+          site_id: personnelData.site_id || null,
+          salary: personnelData.salary ? parseFloat(personnelData.salary.toString()) : null,
+          email: personnelData.email || null,
+          phone: personnelData.phone || null,
+          status: personnelData.status
+        })
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      setIsEditDialogOpen(false);
+      setEditingPersonnel(null);
+      toast({
+        title: "Personal actualizado",
+        description: "Los datos del empleado se han actualizado correctamente.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Error al actualizar personal: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Delete personnel mutation
+  const deletePersonnelMutation = useMutation({
+    mutationFn: async (personnelId: string) => {
+      const { error } = await supabase
+        .from('personnel')
+        .delete()
+        .eq('id', personnelId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      toast({
+        title: "Personal eliminado",
+        description: "El empleado se ha eliminado correctamente.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Error al eliminar personal: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleCreatePersonnel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPersonnel.full_name || !newPersonnel.position) {
+      toast({
+        title: "Error de validación",
+        description: "Nombre y cargo son requeridos.",
+        variant: "destructive"
+      });
+      return;
+    }
+    createPersonnelMutation.mutate(newPersonnel);
+  };
+
+  const handleEditPersonnel = (person: Personnel) => {
+    setEditingPersonnel({
+      ...person,
+      salary: person.salary || 0,
+      site_id: person.site_id || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdatePersonnel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPersonnel) return;
+    updatePersonnelMutation.mutate(editingPersonnel);
+  };
+
+  const handleDeletePersonnel = (personnelId: string) => {
+    if (confirm('¿Estás seguro de que quieres eliminar este empleado?')) {
+      deletePersonnelMutation.mutate(personnelId);
+    }
+  };
+
+  const formatCurrency = (amount?: number) => {
+    if (!amount) return 'No especificado';
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
       currency: 'CLP',
@@ -84,169 +233,366 @@ const HRManagement = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "active":
-        return "bg-success text-success-foreground";
-      case "vacation":
-        return "bg-warning text-warning-foreground";
-      case "leave":
-        return "bg-destructive text-destructive-foreground";
+      case 'Activo':
+        return 'bg-success/20 text-success';
+      case 'Inactivo':
+        return 'bg-destructive/20 text-destructive';
+      case 'Vacaciones':
+        return 'bg-warning/20 text-warning';
       default:
-        return "bg-secondary text-secondary-foreground";
+        return 'bg-muted text-muted-foreground';
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "active":
-        return "Activo";
-      case "vacation":
-        return "Vacaciones";
-      case "leave":
-        return "Licencia";
-      default:
-        return status;
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Gestión de RRHH</h2>
+          <p className="text-muted-foreground">Cargando personal...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Calculate stats
-  const stats = {
-    total: employees.length,
-    active: employees.filter(emp => emp.status === "active").length,
-    onVacation: employees.filter(emp => emp.status === "vacation").length,
-    totalPayroll: employees.reduce((sum, emp) => sum + emp.salary, 0)
-  };
+  // Group personnel by status
+  const activePersonnel = personnel.filter(p => p.status === 'Activo');
+  const inactivePersonnel = personnel.filter(p => p.status === 'Inactivo');
+  const onVacation = personnel.filter(p => p.status === 'Vacaciones');
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Recursos Humanos</h2>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Gestión de RRHH</h2>
           <p className="text-muted-foreground">
-            Gestión del personal y nómina por sitios de trabajo
+            Administra el personal y recursos humanos
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:bg-primary-hover">
-          <UserPlus className="w-4 h-4 mr-2" />
-          Nuevo Empleado
-        </Button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard
-          title="Total Personal"
-          value={stats.total.toString()}
-          change="Distribuido en sitios"
-          changeType="neutral"
-          icon={Users}
-        />
-        <StatsCard
-          title="Personal Activo"
-          value={stats.active.toString()}
-          change={`${((stats.active / stats.total) * 100).toFixed(1)}% del total`}
-          changeType="positive"
-          icon={Briefcase}
-        />
-        <StatsCard
-          title="En Vacaciones"
-          value={stats.onVacation.toString()}
-          change="Personal en descanso"
-          changeType="neutral"
-          icon={Clock}
-        />
-        <StatsCard
-          title="Nómina Total"
-          value={formatCurrency(stats.totalPayroll)}
-          change="Salarios base mensuales"
-          changeType="neutral"
-          icon={Users}
-        />
-      </div>
-
-      {/* Employee Directory */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {employees.map((employee) => (
-          <Card key={employee.id} className="hover:shadow-lg transition-all duration-300">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{employee.name}</CardTitle>
-                <Badge className={getStatusColor(employee.status)}>
-                  {getStatusText(employee.status)}
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">{employee.position}</p>
-            </CardHeader>
-            
-            <CardContent className="space-y-4">
-              {/* Site and Contact Info */}
+        
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Nuevo Empleado
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Registrar Nuevo Empleado</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreatePersonnel} className="space-y-4">
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                  <span>Sitio: {employee.site}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
-                  <span>Inicio: {new Date(employee.startDate).toLocaleDateString('es-CL')}</span>
-                </div>
+                <Label htmlFor="full_name">Nombre Completo</Label>
+                <Input
+                  id="full_name"
+                  value={newPersonnel.full_name}
+                  onChange={(e) => setNewPersonnel(prev => ({ ...prev, full_name: e.target.value }))}
+                  placeholder="Juan Pérez"
+                  required
+                />
               </div>
-
-              {/* Contact Information */}
-              <div className="space-y-2 pt-2 border-t border-border">
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="w-4 h-4 text-muted-foreground" />
-                  <span>{employee.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="truncate">{employee.email}</span>
-                </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="position">Cargo</Label>
+                <Input
+                  id="position"
+                  value={newPersonnel.position}
+                  onChange={(e) => setNewPersonnel(prev => ({ ...prev, position: e.target.value }))}
+                  placeholder="Ingeniero Civil"
+                  required
+                />
               </div>
-
-              {/* Salary Information */}
-              <div className="pt-2 border-t border-border">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Salario Base</span>
-                  <span className="font-medium text-primary">{formatCurrency(employee.salary)}</span>
-                </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="site_id">Sitio Asignado</Label>
+                <Select value={newPersonnel.site_id} onValueChange={(value) => setNewPersonnel(prev => ({ ...prev, site_id: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar sitio (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sites.map((site) => (
+                      <SelectItem key={site.id} value={site.id}>
+                        {site.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" size="sm" className="flex-1">
-                  Ver Perfil
+              
+              <div className="space-y-2">
+                <Label htmlFor="salary">Salario (CLP)</Label>
+                <Input
+                  id="salary"
+                  type="number"
+                  value={newPersonnel.salary}
+                  onChange={(e) => setNewPersonnel(prev => ({ ...prev, salary: e.target.value }))}
+                  placeholder="800000"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newPersonnel.email}
+                  onChange={(e) => setNewPersonnel(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="juan@infratelc.cl"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="phone">Teléfono</Label>
+                <Input
+                  id="phone"
+                  value={newPersonnel.phone}
+                  onChange={(e) => setNewPersonnel(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="+56 9 1234 5678"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Button type="submit" disabled={createPersonnelMutation.isPending}>
+                  {createPersonnelMutation.isPending ? 'Registrando...' : 'Registrar'}
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1">
-                  Editar
+                <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancelar
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Personnel Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Editar Empleado</DialogTitle>
+            </DialogHeader>
+            {editingPersonnel && (
+              <form onSubmit={handleUpdatePersonnel} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-full_name">Nombre Completo</Label>
+                  <Input
+                    id="edit-full_name"
+                    value={editingPersonnel.full_name}
+                    onChange={(e) => setEditingPersonnel(prev => prev ? { ...prev, full_name: e.target.value } : null)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-position">Cargo</Label>
+                  <Input
+                    id="edit-position"
+                    value={editingPersonnel.position}
+                    onChange={(e) => setEditingPersonnel(prev => prev ? { ...prev, position: e.target.value } : null)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-site_id">Sitio Asignado</Label>
+                  <Select 
+                    value={editingPersonnel.site_id || ''} 
+                    onValueChange={(value) => setEditingPersonnel(prev => prev ? { ...prev, site_id: value } : null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar sitio (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sin asignar</SelectItem>
+                      {sites.map((site) => (
+                        <SelectItem key={site.id} value={site.id}>
+                          {site.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-salary">Salario (CLP)</Label>
+                  <Input
+                    id="edit-salary"
+                    type="number"
+                    value={editingPersonnel.salary}
+                    onChange={(e) => setEditingPersonnel(prev => prev ? { ...prev, salary: parseFloat(e.target.value) || 0 } : null)}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-status">Estado</Label>
+                  <Select 
+                    value={editingPersonnel.status} 
+                    onValueChange={(value) => setEditingPersonnel(prev => prev ? { ...prev, status: value } : null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Activo">Activo</SelectItem>
+                      <SelectItem value="Inactivo">Inactivo</SelectItem>
+                      <SelectItem value="Vacaciones">Vacaciones</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email">Email</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={editingPersonnel.email || ''}
+                    onChange={(e) => setEditingPersonnel(prev => prev ? { ...prev, email: e.target.value } : null)}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-phone">Teléfono</Label>
+                  <Input
+                    id="edit-phone"
+                    value={editingPersonnel.phone || ''}
+                    onChange={(e) => setEditingPersonnel(prev => prev ? { ...prev, phone: e.target.value } : null)}
+                  />
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={updatePersonnelMutation.isPending}>
+                    {updatePersonnelMutation.isPending ? 'Actualizando...' : 'Actualizar'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Quick Actions */}
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="w-5 h-5 text-success" />
+              Personal Activo
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-success mb-1">{activePersonnel.length}</div>
+            <p className="text-sm text-muted-foreground">Empleados trabajando</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="w-5 h-5 text-warning" />
+              En Vacaciones
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-warning mb-1">{onVacation.length}</div>
+            <p className="text-sm text-muted-foreground">Empleados de vacaciones</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              Total
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-foreground mb-1">{personnel.length}</div>
+            <p className="text-sm text-muted-foreground">Total empleados</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Personnel List */}
       <Card>
         <CardHeader>
-          <CardTitle>Acciones Rápidas</CardTitle>
+          <CardTitle>Lista de Personal</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button variant="outline" className="p-6 h-auto flex-col gap-2">
-              <Users className="w-8 h-8 text-primary" />
-              <span>Generar Nómina</span>
-              <span className="text-xs text-muted-foreground">Procesar pagos mensuales</span>
-            </Button>
-            <Button variant="outline" className="p-6 h-auto flex-col gap-2">
-              <Calendar className="w-8 h-8 text-primary" />
-              <span>Gestionar Turnos</span>
-              <span className="text-xs text-muted-foreground">Asignar personal a sitios</span>
-            </Button>
-            <Button variant="outline" className="p-6 h-auto flex-col gap-2">
-              <Clock className="w-8 h-8 text-primary" />
-              <span>Control de Asistencia</span>
-              <span className="text-xs text-muted-foreground">Revisar horas trabajadas</span>
-            </Button>
-          </div>
+          {personnel.length > 0 ? (
+            <div className="space-y-4">
+              {personnel.map((person) => (
+                <div key={person.id} className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-secondary/30 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-foreground">{person.full_name}</h4>
+                      <p className="text-sm text-muted-foreground">{person.position}</p>
+                      {person.sites && (
+                        <p className="text-xs text-muted-foreground">Sitio: {person.sites.name}</p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm font-medium">{formatCurrency(person.salary)}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {person.email && (
+                          <div className="flex items-center gap-1">
+                            <Mail className="w-3 h-3" />
+                            <span>{person.email}</span>
+                          </div>
+                        )}
+                        {person.phone && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            <span>{person.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <Badge className={getStatusColor(person.status)}>
+                      {person.status}
+                    </Badge>
+                    
+                    <div className="flex gap-1">
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        onClick={() => handleEditPersonnel(person)}
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        onClick={() => handleDeletePersonnel(person.id)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No hay personal registrado</h3>
+              <p className="text-muted-foreground mb-4">
+                Comienza registrando tu primer empleado
+              </p>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Registrar Primer Empleado
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

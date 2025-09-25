@@ -92,7 +92,7 @@ const SitesManagement = () => {
         .from('sites')
         .update({
           name: siteData.name,
-          budget: parseFloat(siteData.budget),
+          budget: parseFloat(siteData.budget.toString()),
           description: siteData.description,
           status: siteData.status
         })
@@ -145,6 +145,8 @@ const SitesManagement = () => {
       });
     }
   });
+
+  const handleCreateSite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSite.name || !newSite.budget) {
       toast({
@@ -155,6 +157,23 @@ const SitesManagement = () => {
       return;
     }
     createSiteMutation.mutate(newSite);
+  };
+
+  const handleEditSite = (site: Site) => {
+    setEditingSite(site);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateSite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSite) return;
+    updateSiteMutation.mutate(editingSite);
+  };
+
+  const handleDeleteSite = (siteId: string) => {
+    if (confirm('¿Estás seguro de que quieres eliminar este sitio?')) {
+      deleteSiteMutation.mutate(siteId);
+    }
   };
 
   const formatCurrency = (amount: number) => {
