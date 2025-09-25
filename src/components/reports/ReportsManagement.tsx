@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { FileText, Download, Building2, DollarSign, Users, Calendar } from "lucide-react";
+import { FileText, Download, Building2, DollarSign, Users, Calendar, Briefcase, ClipboardList, UserCheck, ShoppingCart, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -355,11 +355,93 @@ const ReportsManagement = () => {
     }
   };
 
+  // Fetch additional data for comprehensive reporting
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients-for-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+    enabled: reportType === 'crm' || reportType === 'comprehensive'
+  });
+
+  const { data: opportunities = [] } = useQuery({
+    queryKey: ['opportunities-for-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .select(`
+          *,
+          clients (name)
+        `)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: reportType === 'crm' || reportType === 'comprehensive'
+  });
+
+  const { data: workOrders = [] } = useQuery({
+    queryKey: ['work-orders-for-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select(`
+          *,
+          sites_enhanced (name)
+        `)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: reportType === 'operations' || reportType === 'comprehensive'
+  });
+
+  const { data: timesheets = [] } = useQuery({
+    queryKey: ['timesheets-for-reports', dateRange],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('timesheets')
+        .select(`
+          *,
+          sites_enhanced (name)
+        `)
+        .gte('date', dateRange.from)
+        .lte('date', dateRange.to)
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: reportType === 'attendance' || reportType === 'comprehensive'
+  });
+
+  const { data: payrollRuns = [] } = useQuery({
+    queryKey: ['payroll-runs-for-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payroll_runs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: reportType === 'payroll' || reportType === 'comprehensive'
+  });
+
   const reportTypes = [
     { value: 'sites', label: 'Reporte de Sitios', icon: Building2 },
     { value: 'expenses', label: 'Reporte de Gastos', icon: DollarSign },
     { value: 'personnel', label: 'Reporte de Personal', icon: Users },
-    { value: 'financial', label: 'Reporte Financiero Completo', icon: FileText }
+    { value: 'crm', label: 'Reporte CRM', icon: Briefcase },
+    { value: 'operations', label: 'Reporte de Operaciones', icon: ClipboardList },
+    { value: 'attendance', label: 'Reporte de Asistencia', icon: UserCheck },
+    { value: 'payroll', label: 'Reporte de Nómina', icon: ShoppingCart },
+    { value: 'comprehensive', label: 'Reporte Ejecutivo Completo', icon: TrendingUp },
+    { value: 'financial', label: 'Reporte Financiero', icon: FileText }
   ];
 
   return (

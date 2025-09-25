@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import StatsCard from "@/components/ui/stats-card";
 import { 
@@ -6,39 +8,157 @@ import {
   TrendingUp, 
   Users,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Briefcase,
+  Clock,
+  Calendar,
+  Target
 } from "lucide-react";
 
 const Dashboard = () => {
-  // Sample data based on Excel templates
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 0
+    }).format(amount);
+  };
+
+  // Real-time data from database
+  const { data: sites = [] } = useQuery({
+    queryKey: ['dashboard-sites'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sites_enhanced')
+        .select('*');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: expenses = [] } = useQuery({
+    queryKey: ['dashboard-expenses'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('amount, expense_date')
+        .gte('expense_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: personnel = [] } = useQuery({
+    queryKey: ['dashboard-personnel'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('personnel')
+        .select('*')
+        .eq('status', 'Activo');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: opportunities = [] } = useQuery({
+    queryKey: ['dashboard-opportunities'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .select('*');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: workOrders = [] } = useQuery({
+    queryKey: ['dashboard-work-orders'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select('*')
+        .in('status', ['created', 'in_progress']);
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: timesheets = [] } = useQuery({
+    queryKey: ['dashboard-timesheets'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('timesheets')
+        .select('*')
+        .eq('date', new Date().toISOString().split('T')[0]);
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  // Calculate real stats
+  const totalBudget = sites.reduce((sum, site) => sum + (site.budget || 0), 0);
+  const totalSpent = sites.reduce((sum, site) => sum + (site.spent || 0), 0);
+  const monthlyExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const efficiency = totalBudget > 0 ? ((totalBudget - totalSpent) / totalBudget) * 100 : 100;
+  const activeProjects = sites.filter(site => site.status === 'in_progress').length;
+  const opportunitiesValue = opportunities.reduce((sum, opp) => sum + (opp.value_clp || 0), 0);
+
   const stats = [
     {
       title: "Sitios Activos",
-      value: "4",
-      change: "+1 este mes",
+      value: sites.length.toString(),
+      change: `${activeProjects} en progreso`,
       changeType: "positive" as const,
       icon: Building2
     },
     {
-      title: "Gastos Totales",
-      value: "$60.1M",
-      change: "-5.2% vs estimado", 
-      changeType: "positive" as const,
+      title: "Presupuesto Total",
+      value: formatCurrency(totalBudget),
+      change: `${formatCurrency(totalSpent)} ejecutado`, 
+      changeType: totalSpent < totalBudget * 0.8 ? "positive" as const : "neutral" as const,
       icon: DollarSign
     },
     {
       title: "Eficiencia Presupuestal",
-      value: "94.8%",
-      change: "+2.1% este mes",
-      changeType: "positive" as const,
+      value: `${efficiency.toFixed(1)}%`,
+      change: `${formatCurrency(totalBudget - totalSpent)} disponible`,
+      changeType: efficiency > 80 ? "positive" as const : efficiency > 60 ? "neutral" as const : "negative" as const,
       icon: TrendingUp
     },
     {
       title: "Personal Activo",
-      value: "47",
+      value: personnel.length.toString(),
       change: "Distribuido en sitios",
       changeType: "neutral" as const,
       icon: Users
+    },
+    {
+      title: "Oportunidades CRM",
+      value: opportunities.length.toString(),
+      change: formatCurrency(opportunitiesValue),
+      changeType: "positive" as const,
+      icon: Briefcase
+    },
+    {
+      title: "Órdenes Activas",
+      value: workOrders.length.toString(),
+      change: "En ejecución",
+      changeType: workOrders.length > 0 ? "positive" as const : "neutral" as const,
+      icon: Target
+    },
+    {
+      title: "Asistencia Hoy",
+      value: timesheets.length.toString(),
+      change: "Empleados registrados",
+      changeType: "neutral" as const,
+      icon: Clock
+    },
+    {
+      title: "Gastos del Mes",
+      value: formatCurrency(monthlyExpenses),
+      change: `${expenses.length} registros`,
+      changeType: "neutral" as const,
+      icon: Calendar
     }
   ];
 
@@ -69,14 +189,6 @@ const Dashboard = () => {
     }
   ];
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      minimumFractionDigits: 0
-    }).format(amount);
-  };
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "En progreso":
@@ -98,7 +210,7 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {stats.map((stat, index) => (
           <StatsCard key={index} {...stat} />
         ))}
@@ -115,7 +227,7 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {sitesSummary.map((site, index) => {
+              {sites.slice(0, 4).map((site, index) => {
                 const efficiency = site.budget > 0 ? ((site.budget - site.spent) / site.budget) * 100 : 100;
                 
                 return (
@@ -129,7 +241,7 @@ const Dashboard = () => {
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-foreground">
-                        {formatCurrency(site.spent)} / {formatCurrency(site.budget)}
+                        {formatCurrency(site.spent || 0)} / {formatCurrency(site.budget || 0)}
                       </p>
                       <p className={`text-sm ${efficiency > 80 ? 'text-success' : efficiency > 60 ? 'text-warning' : 'text-destructive'}`}>
                         {efficiency.toFixed(1)}% disponible
@@ -138,6 +250,12 @@ const Dashboard = () => {
                   </div>
                 );
               })}
+              {sites.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No hay sitios registrados</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -153,31 +271,41 @@ const Dashboard = () => {
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-success/10 border border-success/20">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-success">Ahorro Total</span>
-                  <span className="text-lg font-bold text-success">$53.0M</span>
+                  <span className="text-sm font-medium text-success">Presupuesto Disponible</span>
+                  <span className="text-lg font-bold text-success">{formatCurrency(totalBudget - totalSpent)}</span>
                 </div>
                 <p className="text-xs text-success/80 mt-1">
-                  Diferencia entre presupuestado y ejecutado
+                  {((totalBudget - totalSpent) / totalBudget * 100).toFixed(1)}% del presupuesto total
                 </p>
               </div>
               
               <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-primary">Presupuesto Total</span>
-                  <span className="text-lg font-bold text-primary">$60.1M</span>
+                  <span className="text-lg font-bold text-primary">{formatCurrency(totalBudget)}</span>
                 </div>
                 <p className="text-xs text-primary/80 mt-1">
-                  Suma de todos los sitios
+                  {sites.length} sitios activos
                 </p>
               </div>
               
               <div className="p-4 rounded-lg bg-accent/10 border border-accent/20">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-accent-foreground">Ejecutado</span>
-                  <span className="text-lg font-bold text-accent-foreground">$7.1M</span>
+                  <span className="text-lg font-bold text-accent-foreground">{formatCurrency(totalSpent)}</span>
                 </div>
                 <p className="text-xs text-accent-foreground/80 mt-1">
-                  11.8% del presupuesto total
+                  {(totalSpent / totalBudget * 100).toFixed(1)}% del presupuesto total
+                </p>
+              </div>
+
+              <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-warning">Gastos del Mes</span>
+                  <span className="text-lg font-bold text-warning">{formatCurrency(monthlyExpenses)}</span>
+                </div>
+                <p className="text-xs text-warning/80 mt-1">
+                  {expenses.length} transacciones este mes
                 </p>
               </div>
             </div>
