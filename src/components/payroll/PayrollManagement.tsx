@@ -12,6 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import jsPDF from 'jspdf';
 import { 
   Plus, 
   Calculator, 
@@ -26,6 +28,7 @@ import {
 
 const PayrollManagement = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isRatesDialogOpen, setIsRatesDialogOpen] = useState(false);
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
@@ -50,51 +53,79 @@ const PayrollManagement = () => {
     gratification_cap: '4.75'
   });
 
+  // Get current user profile with tenant
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*, tenants(*)')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   // Fetch payroll rates
   const { data: rates = [], isLoading: ratesLoading } = useQuery({
-    queryKey: ['payroll-rates'],
+    queryKey: ['payroll-rates', profile?.tenant_id],
     queryFn: async () => {
+      if (!profile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('payroll_rates')
         .select('*')
+        .eq('tenant_id', profile.tenant_id)
         .order('period', { ascending: false });
       
       if (error) throw error;
       return data;
     },
+    enabled: !!profile?.tenant_id,
   });
 
   // Fetch payroll runs
   const { data: payrollRuns = [], isLoading: runsLoading } = useQuery({
-    queryKey: ['payroll-runs'],
+    queryKey: ['payroll-runs', profile?.tenant_id],
     queryFn: async () => {
+      if (!profile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('payroll_runs')
-        .select('*')
+        .select('*, payroll_items(*)')
+        .eq('tenant_id', profile.tenant_id)
         .order('period', { ascending: false });
       
       if (error) throw error;
       return data;
     },
+    enabled: !!profile?.tenant_id,
   });
 
   // Fetch employees for payroll
   const { data: employees = [] } = useQuery({
-    queryKey: ['payroll-employees'],
+    queryKey: ['payroll-employees', profile?.tenant_id],
     queryFn: async () => {
+      if (!profile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('personnel')
         .select('*')
+        .eq('tenant_id', profile.tenant_id)
         .eq('status', 'Activo');
       
       if (error) throw error;
       return data;
     },
+    enabled: !!profile?.tenant_id,
   });
 
   // Create rates mutation
   const createRatesMutation = useMutation({
     mutationFn: async (ratesData: typeof newRates) => {
+      if (!profile?.tenant_id) throw new Error('No se pudo obtener la información del tenant');
+      
       const { error } = await supabase
         .from('payroll_rates')
         .insert({
@@ -114,7 +145,7 @@ const PayrollManagement = () => {
           afp_taxable_cap: parseFloat(ratesData.afp_taxable_cap),
           health_taxable_cap: parseFloat(ratesData.health_taxable_cap),
           gratification_cap: parseFloat(ratesData.gratification_cap),
-          tenant_id: 'demo-tenant-id'
+          tenant_id: profile.tenant_id
         });
       
       if (error) throw error;
@@ -136,6 +167,8 @@ const PayrollManagement = () => {
   // Create payroll run mutation
   const createPayrollRunMutation = useMutation({
     mutationFn: async (period: string) => {
+      if (!profile?.tenant_id) throw new Error('No se pudo obtener la información del tenant');
+      
       const currentRates = rates.find(r => r.period === period);
       if (!currentRates) {
         throw new Error('No hay tasas configuradas para este período');
@@ -147,7 +180,7 @@ const PayrollManagement = () => {
           period,
           rates_id: currentRates.id,
           total_employees: employees.length,
-          tenant_id: 'demo-tenant-id'
+          tenant_id: profile.tenant_id
         });
       
       if (error) throw error;
@@ -204,6 +237,99 @@ const PayrollManagement = () => {
   const canCalculatePayroll = () => {
     const currentRates = getCurrentRates();
     return currentRates && employees.length > 0;
+  };
+
+  // Generate pay slip PDF
+  const generatePaySlipPDF = async (runId: string, employeeId?: string) => {
+    try {
+      const { data: payrollItems, error } = await supabase
+        .from('payroll_items')
+        .select('*')
+        .eq('payroll_run_id', runId)
+        .eq(employeeId ? 'employee_id' : 'id', employeeId || runId);
+
+      if (error) throw error;
+      if (!payrollItems || payrollItems.length === 0) {
+        toast({
+          title: "Sin datos",
+          description: "No se encontraron liquidaciones para este período",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const doc = new jsPDF();
+      
+      // Generate liquidation for each employee
+      payrollItems.forEach((item, index) => {
+        if (index > 0) doc.addPage();
+        
+        // Header
+        doc.setFontSize(18);
+        doc.text('LIQUIDACIÓN DE SUELDO', 20, 20);
+        doc.setFontSize(12);
+        doc.text(`Período: ${item.payroll_run_id}`, 20, 35);
+        doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 140, 35);
+        
+        // Employee info
+        doc.setFontSize(14);
+        doc.text('DATOS DEL TRABAJADOR', 20, 55);
+        doc.setFontSize(10);
+        doc.text(`Nombre: ${item.employee_name}`, 20, 70);
+        doc.text(`RUT: ${item.employee_rut || 'No especificado'}`, 20, 80);
+        doc.text(`Cargo: ${item.position || 'No especificado'}`, 20, 90);
+        
+        // Earnings
+        doc.setFontSize(14);
+        doc.text('HABERES', 20, 110);
+        doc.setFontSize(10);
+        let yPos = 125;
+        doc.text(`Sueldo Base: $${item.base_salary?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        yPos += 10;
+        if (item.overtime_amount > 0) {
+          doc.text(`Horas Extra: $${item.overtime_amount.toLocaleString('es-CL')}`, 20, yPos);
+          yPos += 10;
+        }
+        doc.text(`Total Haberes: $${item.gross_taxable?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        
+        // Deductions
+        yPos += 20;
+        doc.setFontSize(14);
+        doc.text('DESCUENTOS', 20, yPos);
+        doc.setFontSize(10);
+        yPos += 15;
+        doc.text(`AFP: $${item.afp_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        yPos += 10;
+        doc.text(`Salud: $${item.health_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        yPos += 10;
+        doc.text(`Impuestos: $${item.tax_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        yPos += 10;
+        doc.text(`AFC: $${item.afc_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        
+        // Net pay
+        yPos += 20;
+        doc.setFontSize(14);
+        doc.text(`LÍQUIDO A PAGAR: $${item.net_pay?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+      });
+
+      // Download PDF
+      const fileName = employeeId 
+        ? `liquidacion-${payrollItems[0].employee_name.replace(/\s+/g, '_')}-${runId}.pdf`
+        : `liquidaciones-${runId}.pdf`;
+      doc.save(fileName);
+      
+      toast({
+        title: "Liquidación descargada",
+        description: `Se ha generado la liquidación exitosamente`
+      });
+    } catch (error) {
+      console.error('Error generating pay slip:', error);
+      toast({
+        title: "Error",
+        description: "No se pudo generar la liquidación",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -592,10 +718,20 @@ const PayrollManagement = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
-                            <Button variant="outline" size="sm">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => generatePaySlipPDF(run.id)}
+                              title="Descargar todas las liquidaciones"
+                            >
                               <FileText className="h-4 w-4" />
                             </Button>
-                            <Button variant="outline" size="sm">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => generatePaySlipPDF(run.id)}
+                              title="Descargar liquidaciones"
+                            >
                               <Download className="h-4 w-4" />
                             </Button>
                           </div>
@@ -615,11 +751,58 @@ const PayrollManagement = () => {
               <CardTitle>Liquidaciones de Sueldo</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="mx-auto h-12 w-12 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Liquidaciones Generadas</h3>
-                <p>Las liquidaciones aparecerán aquí una vez procesadas las nóminas</p>
-              </div>
+              {payrollRuns.length > 0 ? (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Períodos Disponibles</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {payrollRuns.map((run) => (
+                      <Card key={run.id} className="border">
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h4 className="font-medium">{run.period}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {run.total_employees} empleados
+                              </p>
+                            </div>
+                            <Badge className={`${getStatusColor(run.status)} text-white`}>
+                              {getStatusLabel(run.status)}
+                            </Badge>
+                          </div>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span>Total Bruto:</span>
+                              <span className="font-medium">{formatCurrency(run.total_gross_pay)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Total Líquido:</span>
+                              <span className="font-medium">{formatCurrency(run.total_net_pay)}</span>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex space-x-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => generatePaySlipPDF(run.id)}
+                              disabled={run.status === 'draft'}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Descargar Todas
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="mx-auto h-12 w-12 mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Liquidaciones Generadas</h3>
+                  <p>Las liquidaciones aparecerán aquí una vez procesadas las nóminas</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
