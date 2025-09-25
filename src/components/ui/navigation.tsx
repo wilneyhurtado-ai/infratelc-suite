@@ -1,6 +1,8 @@
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   LayoutDashboard, 
   Building2, 
@@ -8,7 +10,10 @@ import {
   Users, 
   FileText, 
   Settings,
-  LogOut
+  LogOut,
+  Shield,
+  User,
+  CheckSquare
 } from "lucide-react";
 
 interface NavigationProps {
@@ -16,17 +21,51 @@ interface NavigationProps {
   onTabChange: (tab: string) => void;
 }
 
-const navigationItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "sites", label: "Sitios", icon: Building2 },
-  { id: "expenses", label: "Gastos", icon: DollarSign },
-  { id: "hr", label: "RRHH", icon: Users },
-  { id: "reports", label: "Reportes", icon: FileText },
-  { id: "settings", label: "Configuración", icon: Settings },
-];
+const getNavigationItems = (userRole: string | undefined) => {
+  const adminItems = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "sites", label: "Sitios", icon: Building2 },
+    { id: "expenses", label: "Gastos", icon: DollarSign },
+    { id: "hr", label: "RRHH", icon: Users },
+    { id: "reports", label: "Reportes", icon: FileText },
+    { id: "users", label: "Usuarios", icon: Shield },
+    { id: "settings", label: "Configuración", icon: Settings },
+  ];
+
+  const workerItems = [
+    { id: "worker-dashboard", label: "Mi Dashboard", icon: User },
+    { id: "expenses", label: "Mis Gastos", icon: DollarSign },
+    { id: "tasks", label: "Mis Órdenes", icon: CheckSquare },
+  ];
+
+  if (userRole === 'trabajador' || userRole === 'tecnico') {
+    return workerItems;
+  }
+
+  return adminItems;
+};
 
 const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
   const { signOut, user } = useAuth();
+
+  // Get user profile for role-based navigation
+  const { data: profile } = useQuery({
+    queryKey: ['nav-profile', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, full_name')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  const navigationItems = getNavigationItems(profile?.role);
 
   return (
     <nav className="fixed left-0 top-0 h-full w-64 bg-card border-r border-border/40 shadow-lg">
@@ -43,8 +82,11 @@ const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
         </div>
         {user && (
           <div className="mt-4 p-3 bg-secondary/20 rounded-lg">
-            <p className="text-sm text-foreground font-medium truncate">
-              {user.email}
+            <p className="text-sm text-foreground font-medium">
+              {profile?.full_name || 'Usuario'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {profile?.role || 'trabajador'}
             </p>
           </div>
         )}
