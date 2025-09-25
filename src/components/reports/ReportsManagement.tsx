@@ -121,10 +121,13 @@ const ReportsManagement = () => {
   };
 
   const generateSitesReportPDF = () => {
+    console.log('Generating sites report PDF with', sites.length, 'sites');
+    
     if (sites.length === 0) {
+      console.warn('No sites found for PDF generation');
       toast({
-        title: "Error",
-        description: "No hay sitios para generar el reporte.",
+        title: "Sin datos",
+        description: "No hay sitios disponibles para generar el reporte.",
         variant: "destructive"
       });
       return;
@@ -172,10 +175,13 @@ const ReportsManagement = () => {
   };
 
   const generateExpensesReportPDF = () => {
+    console.log('Generating expenses report PDF with', expenses.length, 'expenses');
+    
     if (expenses.length === 0) {
+      console.warn('No expenses found for PDF generation');
       toast({
-        title: "Error",
-        description: "No hay gastos para generar el reporte.",
+        title: "Sin datos",
+        description: "No hay gastos disponibles para el período seleccionado.",
         variant: "destructive"
       });
       return;
@@ -352,6 +358,8 @@ const ReportsManagement = () => {
   };
 
   const generateReport = (format: 'pdf' | 'excel') => {
+    console.log('Generating report:', reportType, 'format:', format);
+    
     if (!reportType) {
       toast({
         title: "Error",
@@ -365,19 +373,32 @@ const ReportsManagement = () => {
       if (format === 'pdf') {
         switch (reportType) {
           case 'sites':
+            console.log('Calling generateSitesReportPDF');
             generateSitesReportPDF();
             break;
           case 'expenses':
+            console.log('Calling generateExpensesReportPDF');
             generateExpensesReportPDF();
             break;
           case 'personnel':
+            console.log('Calling generatePersonnelReportPDF');
             generatePersonnelReportPDF();
             break;
           case 'financial':
+            console.log('Calling generateSitesReportPDF for financial');
             generateSitesReportPDF(); // For financial, we'll generate sites report
             break;
+          default:
+            console.warn('Unknown report type:', reportType);
+            toast({
+              title: "Error",
+              description: "Tipo de reporte no válido.",
+              variant: "destructive"
+            });
+            return;
         }
       } else {
+        console.log('Calling generateExcelReport');
         generateExcelReport();
       }
 
@@ -386,9 +407,10 @@ const ReportsManagement = () => {
         description: `El reporte se ha descargado exitosamente en formato ${format.toUpperCase()}.`,
       });
     } catch (error) {
+      console.error('Error generating report:', error);
       toast({
         title: "Error",
-        description: "Error al generar el reporte. Inténtalo de nuevo.",
+        description: `Error al generar el reporte: ${error instanceof Error ? error.message : 'Error desconocido'}`,
         variant: "destructive"
       });
     }
