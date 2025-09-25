@@ -120,7 +120,7 @@ const ReportsManagement = () => {
     }).format(amount);
   };
 
-  const generateSitesReportPDF = () => {
+  const generateSitesReportPDF = (): boolean => {
     console.log('Generating sites report PDF with', sites.length, 'sites');
     
     if (sites.length === 0) {
@@ -130,7 +130,7 @@ const ReportsManagement = () => {
         description: "No hay sitios disponibles para generar el reporte.",
         variant: "destructive"
       });
-      return;
+      return false;
     }
 
     const doc = new jsPDF();
@@ -172,9 +172,10 @@ const ReportsManagement = () => {
     doc.text(`Total Disponible: ${formatCurrency(totalBudget - totalSpent)}`, 20, finalY + 20);
 
     doc.save(`reporte-sitios-${new Date().toISOString().split('T')[0]}.pdf`);
+    return true;
   };
 
-  const generateExpensesReportPDF = () => {
+  const generateExpensesReportPDF = (): boolean => {
     console.log('Generating expenses report PDF with', expenses.length, 'expenses');
     
     if (expenses.length === 0) {
@@ -184,7 +185,7 @@ const ReportsManagement = () => {
         description: "No hay gastos disponibles para el período seleccionado.",
         variant: "destructive"
       });
-      return;
+      return false;
     }
 
     const doc = new jsPDF();
@@ -234,9 +235,10 @@ const ReportsManagement = () => {
     doc.text(`Cantidad de Registros: ${expenses.length}`, 20, finalY + 10);
 
     doc.save(`reporte-gastos-${new Date().toISOString().split('T')[0]}.pdf`);
+    return true;
   };
 
-  const generatePersonnelReportPDF = () => {
+  const generatePersonnelReportPDF = (): boolean => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     
@@ -283,9 +285,10 @@ const ReportsManagement = () => {
     doc.text(`Costo Total en Salarios: ${formatCurrency(totalSalaries)}`, 20, finalY + 20);
 
     doc.save(`reporte-personal-${new Date().toISOString().split('T')[0]}.pdf`);
+    return true;
   };
 
-  const generateExcelReport = () => {
+  const generateExcelReport = (): boolean => {
     const workbook = XLSX.utils.book_new();
     let hasData = false;
 
@@ -351,10 +354,11 @@ const ReportsManagement = () => {
         description: "No hay datos para generar el reporte Excel.",
         variant: "destructive"
       });
-      return;
+      return false;
     }
 
     XLSX.writeFile(workbook, `reporte-${reportType}-${new Date().toISOString().split('T')[0]}.xlsx`);
+    return true;
   };
 
   const generateReport = (format: 'pdf' | 'excel') => {
@@ -370,23 +374,25 @@ const ReportsManagement = () => {
     }
 
     try {
+      let success = false;
+      
       if (format === 'pdf') {
         switch (reportType) {
           case 'sites':
             console.log('Calling generateSitesReportPDF');
-            generateSitesReportPDF();
+            success = generateSitesReportPDF();
             break;
           case 'expenses':
             console.log('Calling generateExpensesReportPDF');
-            generateExpensesReportPDF();
+            success = generateExpensesReportPDF();
             break;
           case 'personnel':
             console.log('Calling generatePersonnelReportPDF');
-            generatePersonnelReportPDF();
+            success = generatePersonnelReportPDF();
             break;
           case 'financial':
             console.log('Calling generateSitesReportPDF for financial');
-            generateSitesReportPDF(); // For financial, we'll generate sites report
+            success = generateSitesReportPDF(); // For financial, we'll generate sites report
             break;
           default:
             console.warn('Unknown report type:', reportType);
@@ -399,13 +405,15 @@ const ReportsManagement = () => {
         }
       } else {
         console.log('Calling generateExcelReport');
-        generateExcelReport();
+        success = generateExcelReport();
       }
 
-      toast({
-        title: "Reporte generado",
-        description: `El reporte se ha descargado exitosamente en formato ${format.toUpperCase()}.`,
-      });
+      if (success) {
+        toast({
+          title: "Reporte generado",
+          description: `El reporte se ha descargado exitosamente en formato ${format.toUpperCase()}.`,
+        });
+      }
     } catch (error) {
       console.error('Error generating report:', error);
       toast({
