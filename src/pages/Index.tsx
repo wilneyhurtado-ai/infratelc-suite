@@ -11,6 +11,8 @@ import HRManagement from "@/components/hr/HRManagement";
 import ReportsManagement from "@/components/reports/ReportsManagement";
 import UserManagement from '@/components/admin/UserManagement';
 import WorkerDashboard from '@/components/worker/WorkerDashboard';
+import CRMManagement from '@/components/crm/CRMManagement';
+import FieldOperationsManagement from '@/components/operations/FieldOperationsManagement';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -83,6 +85,10 @@ const Index = () => {
         return <ReportsManagement />;
       case "users":
         return <UserManagement />;
+      case "crm":
+        return <CRMManagement />;
+      case "operations":
+        return <FieldOperationsManagement />;
       case "worker-dashboard":
         return <WorkerDashboard />;
       case "settings":

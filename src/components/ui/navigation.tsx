@@ -13,7 +13,9 @@ import {
   LogOut,
   Shield,
   User,
-  CheckSquare
+  CheckSquare,
+  Briefcase,
+  Wrench
 } from "lucide-react";
 
 interface NavigationProps {
@@ -24,6 +26,8 @@ interface NavigationProps {
 const getNavigationItems = (userRole: string | undefined) => {
   const adminItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "crm", label: "CRM", icon: Briefcase },
+    { id: "operations", label: "Operaciones", icon: Wrench },
     { id: "sites", label: "Sitios", icon: Building2 },
     { id: "expenses", label: "Gastos", icon: DollarSign },
     { id: "hr", label: "RRHH", icon: Users },
