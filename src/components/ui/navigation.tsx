@@ -15,7 +15,9 @@ import {
   User,
   CheckSquare,
   Briefcase,
-  Wrench
+  Wrench,
+  Calculator,
+  Timer
 } from "lucide-react";
 
 interface NavigationProps {
@@ -31,6 +33,8 @@ const getNavigationItems = (userRole: string | undefined) => {
     { id: "sites", label: "Sitios", icon: Building2 },
     { id: "expenses", label: "Gastos", icon: DollarSign },
     { id: "hr", label: "RRHH", icon: Users },
+    { id: "timesheets", label: "Asistencia", icon: Timer },
+    { id: "payroll", label: "Nóminas", icon: Calculator },
     { id: "reports", label: "Reportes", icon: FileText },
     { id: "users", label: "Usuarios", icon: Shield },
     { id: "settings", label: "Configuración", icon: Settings },

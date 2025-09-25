@@ -13,6 +13,8 @@ import UserManagement from '@/components/admin/UserManagement';
 import WorkerDashboard from '@/components/worker/WorkerDashboard';
 import CRMManagement from '@/components/crm/CRMManagement';
 import FieldOperationsManagement from '@/components/operations/FieldOperationsManagement';
+import PayrollManagement from '@/components/payroll/PayrollManagement';
+import TimesheetsManagement from '@/components/timesheets/TimesheetsManagement';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -89,6 +91,10 @@ const Index = () => {
         return <CRMManagement />;
       case "operations":
         return <FieldOperationsManagement />;
+      case "payroll":
+        return <PayrollManagement />;
+      case "timesheets":
+        return <TimesheetsManagement />;
       case "worker-dashboard":
         return <WorkerDashboard />;
       case "settings":
