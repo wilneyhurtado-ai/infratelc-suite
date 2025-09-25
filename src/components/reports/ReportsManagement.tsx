@@ -78,7 +78,7 @@ const ReportsManagement = () => {
         .lte('expense_date', dateRange.to)
         .order('expense_date', { ascending: false });
       
-      if (selectedSite) {
+      if (selectedSite && selectedSite !== 'all-sites') {
         query = query.eq('site_id', selectedSite);
       }
       
@@ -101,7 +101,7 @@ const ReportsManagement = () => {
         `)
         .order('full_name');
       
-      if (selectedSite) {
+      if (selectedSite && selectedSite !== 'all-sites') {
         query = query.eq('site_id', selectedSite);
       }
       
@@ -121,24 +121,33 @@ const ReportsManagement = () => {
   };
 
   const generateSitesReportPDF = () => {
+    if (sites.length === 0) {
+      toast({
+        title: "Error",
+        description: "No hay sitios para generar el reporte.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     
     // Header
     doc.setFontSize(20);
-    doc.text('Reporte de Sitios - Infratelc', pageWidth / 2, 20, { align: 'center' });
+    doc.text('Reporte de Sitios - InfraTelC', pageWidth / 2, 20, { align: 'center' });
     
     doc.setFontSize(12);
     doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, pageWidth / 2, 30, { align: 'center' });
 
-    // Table data
+    // Table data with safe budget calculations
     const tableData = sites.map(site => [
-      site.name,
-      site.status,
-      formatCurrency(site.budget),
-      formatCurrency(site.spent),
-      formatCurrency(site.budget - site.spent),
-      `${((1 - site.spent / site.budget) * 100).toFixed(1)}%`
+      site.name || 'Sin nombre',
+      site.status || 'Sin estado',
+      formatCurrency(site.budget || 0),
+      formatCurrency(site.spent || 0),
+      formatCurrency((site.budget || 0) - (site.spent || 0)),
+      site.budget > 0 ? `${((1 - (site.spent || 0) / site.budget) * 100).toFixed(1)}%` : '0%'
     ]);
 
     // Add table
@@ -150,9 +159,9 @@ const ReportsManagement = () => {
       headStyles: { fillColor: [51, 122, 183] }
     });
 
-    // Summary
-    const totalBudget = sites.reduce((sum, site) => sum + site.budget, 0);
-    const totalSpent = sites.reduce((sum, site) => sum + site.spent, 0);
+    // Summary with safe calculations
+    const totalBudget = sites.reduce((sum, site) => sum + (site.budget || 0), 0);
+    const totalSpent = sites.reduce((sum, site) => sum + (site.spent || 0), 0);
     const finalY = (doc as any).lastAutoTable.finalY + 20;
 
     doc.text(`Total Presupuestado: ${formatCurrency(totalBudget)}`, 20, finalY);
@@ -163,27 +172,38 @@ const ReportsManagement = () => {
   };
 
   const generateExpensesReportPDF = () => {
+    if (expenses.length === 0) {
+      toast({
+        title: "Error",
+        description: "No hay gastos para generar el reporte.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     
     // Header
     doc.setFontSize(20);
-    doc.text('Reporte de Gastos - Infratelc', pageWidth / 2, 20, { align: 'center' });
+    doc.text('Reporte de Gastos - InfraTelC', pageWidth / 2, 20, { align: 'center' });
     
     doc.setFontSize(12);
-    const siteName = selectedSite ? sites.find(s => s.id === selectedSite)?.name : 'Todos los sitios';
+    const siteName = selectedSite && selectedSite !== 'all-sites' 
+      ? sites.find(s => s.id === selectedSite)?.name || 'Sin sitio'
+      : 'Todos los sitios';
     doc.text(`Sitio: ${siteName}`, 20, 35);
     doc.text(`Período: ${dateRange.from} a ${dateRange.to}`, 20, 45);
     doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, 20, 55);
 
-    // Table data
+    // Table data with safe data handling
     const tableData = expenses.map(expense => [
-      new Date(expense.expense_date).toLocaleDateString('es-CL'),
-      expense.sites?.name || '',
-      expense.expense_categories?.name || '',
-      expense.description,
-      formatCurrency(expense.amount),
-      expense.document_number || ''
+      expense.expense_date ? new Date(expense.expense_date).toLocaleDateString('es-CL') : 'Sin fecha',
+      expense.sites?.name || 'Sin sitio',
+      expense.expense_categories?.name || 'Sin categoría',
+      expense.description || 'Sin descripción',
+      formatCurrency(expense.amount || 0),
+      expense.document_number || 'Sin documento'
     ]);
 
     // Add table
@@ -200,7 +220,7 @@ const ReportsManagement = () => {
     });
 
     // Summary
-    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
     const finalY = (doc as any).lastAutoTable.finalY + 20;
     
     doc.setFontSize(12);
@@ -261,52 +281,71 @@ const ReportsManagement = () => {
 
   const generateExcelReport = () => {
     const workbook = XLSX.utils.book_new();
+    let hasData = false;
 
     // Sites sheet
     if (reportType === 'sites' || reportType === 'financial') {
-      const sitesData = sites.map(site => ({
-        'Sitio': site.name,
-        'Estado': site.status,
-        'Presupuesto': site.budget,
-        'Gastado': site.spent,
-        'Disponible': site.budget - site.spent,
-        'Eficiencia (%)': ((1 - site.spent / site.budget) * 100).toFixed(1)
-      }));
-      
-      const sitesSheet = XLSX.utils.json_to_sheet(sitesData);
-      XLSX.utils.book_append_sheet(workbook, sitesSheet, 'Sitios');
+      if (sites.length > 0) {
+        const sitesData = sites.map(site => ({
+          'Sitio': site.name || 'Sin nombre',
+          'Estado': site.status || 'Sin estado',
+          'Presupuesto': site.budget || 0,
+          'Gastado': site.spent || 0,
+          'Disponible': (site.budget || 0) - (site.spent || 0),
+          'Eficiencia (%)': site.budget > 0 ? ((1 - (site.spent || 0) / site.budget) * 100).toFixed(1) : '0'
+        }));
+        
+        const sitesSheet = XLSX.utils.json_to_sheet(sitesData);
+        XLSX.utils.book_append_sheet(workbook, sitesSheet, 'Sitios');
+        hasData = true;
+      }
     }
 
     // Expenses sheet
     if (reportType === 'expenses' || reportType === 'financial') {
-      const expensesData = expenses.map(expense => ({
-        'Fecha': expense.expense_date,
-        'Sitio': expense.sites?.name || '',
-        'Categoría': expense.expense_categories?.name || '',
-        'Tipo': expense.expense_categories?.type || '',
-        'Descripción': expense.description,
-        'Monto': expense.amount,
-        'Documento': expense.document_number || ''
-      }));
-      
-      const expensesSheet = XLSX.utils.json_to_sheet(expensesData);
-      XLSX.utils.book_append_sheet(workbook, expensesSheet, 'Gastos');
+      if (expenses.length > 0) {
+        const expensesData = expenses.map(expense => ({
+          'Fecha': expense.expense_date || 'Sin fecha',
+          'Sitio': expense.sites?.name || 'Sin sitio',
+          'Categoría': expense.expense_categories?.name || 'Sin categoría',
+          'Tipo': expense.expense_categories?.type || 'Sin tipo',
+          'Descripción': expense.description || 'Sin descripción',
+          'Monto': expense.amount || 0,
+          'Documento': expense.document_number || 'Sin documento'
+        }));
+        
+        const expensesSheet = XLSX.utils.json_to_sheet(expensesData);
+        XLSX.utils.book_append_sheet(workbook, expensesSheet, 'Gastos');
+        hasData = true;
+      }
     }
 
     // Personnel sheet
     if (reportType === 'personnel') {
-      const personnelData = personnel.map(person => ({
-        'Nombre': person.full_name,
-        'Cargo': person.position,
-        'Sitio': person.sites?.name || 'Sin asignar',
-        'Estado': person.status,
-        'Salario': person.salary || 0,
-        'Email': person.email || '',
-        'Teléfono': person.phone || ''
-      }));
-      
-      const personnelSheet = XLSX.utils.json_to_sheet(personnelData);
-      XLSX.utils.book_append_sheet(workbook, personnelSheet, 'Personal');
+      if (personnel.length > 0) {
+        const personnelData = personnel.map(person => ({
+          'Nombre': person.full_name || 'Sin nombre',
+          'Cargo': person.position || 'Sin cargo',
+          'Sitio': person.sites?.name || 'Sin asignar',
+          'Estado': person.status || 'Sin estado',
+          'Salario': person.salary || 0,
+          'Email': person.email || 'Sin email',
+          'Teléfono': person.phone || 'Sin teléfono'
+        }));
+        
+        const personnelSheet = XLSX.utils.json_to_sheet(personnelData);
+        XLSX.utils.book_append_sheet(workbook, personnelSheet, 'Personal');
+        hasData = true;
+      }
+    }
+
+    if (!hasData) {
+      toast({
+        title: "Error",
+        description: "No hay datos para generar el reporte Excel.",
+        variant: "destructive"
+      });
+      return;
     }
 
     XLSX.writeFile(workbook, `reporte-${reportType}-${new Date().toISOString().split('T')[0]}.xlsx`);
