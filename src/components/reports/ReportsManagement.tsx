@@ -1,319 +1,544 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { 
-  FileText, 
-  Download, 
-  Eye,
-  Calendar,
-  Building2,
-  DollarSign,
-  Users,
-  TrendingUp,
-  Filter
-} from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { FileText, Download, Building2, DollarSign, Users, Calendar } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
-interface Report {
+interface Site {
   id: string;
   name: string;
-  type: "financial" | "site" | "hr" | "operational";
+  budget: number;
+  spent: number;
+  status: string;
+}
+
+interface Expense {
+  id: string;
   description: string;
-  lastGenerated: string;
-  format: "PDF" | "Excel" | "CSV";
-  frequency: "daily" | "weekly" | "monthly" | "on-demand";
+  amount: number;
+  expense_date: string;
+  sites?: { name: string };
+  expense_categories?: { name: string; type: string };
+  document_number?: string;
+}
+
+interface Personnel {
+  id: string;
+  full_name: string;
+  position: string;
+  salary?: number;
+  status: string;
+  sites?: { name: string };
+  email?: string;
+  phone?: string;
 }
 
 const ReportsManagement = () => {
-  const reports: Report[] = [
-    {
-      id: "1",
-      name: "Resumen Financiero por Sitio",
-      type: "financial",
-      description: "Comparativo de gastos estimados vs reales por cada sitio de trabajo",
-      lastGenerated: "2024-09-24",
-      format: "Excel",
-      frequency: "weekly"
-    },
-    {
-      id: "2",
-      name: "Estado de Proyectos",
-      type: "site", 
-      description: "Avance general de todos los sitios y proyectos activos",
-      lastGenerated: "2024-09-24",
-      format: "PDF",
-      frequency: "monthly"
-    },
-    {
-      id: "3",
-      name: "Nómina y Personal",
-      type: "hr",
-      description: "Distribución de personal por sitio y costos salariales",
-      lastGenerated: "2024-09-20",
-      format: "Excel",
-      frequency: "monthly"
-    },
-    {
-      id: "4",
-      name: "Gastos Operacionales",
-      type: "operational",
-      description: "Desglose detallado de gastos operacionales por categoría",
-      lastGenerated: "2024-09-23",
-      format: "PDF",
-      frequency: "weekly"
-    },
-    {
-      id: "5",
-      name: "Análisis de Eficiencia",
-      type: "financial",
-      description: "Indicadores de eficiencia presupuestal y desviaciones",
-      lastGenerated: "2024-09-22",
-      format: "PDF",
-      frequency: "monthly"
-    },
-    {
-      id: "6",
-      name: "Control de Gastos Personal",
-      type: "hr",
-      description: "Gastos de alimentación, alojamiento y sueldos por sitio",
-      lastGenerated: "2024-09-24",
-      format: "Excel",
-      frequency: "weekly"
-    }
-  ];
+  const { toast } = useToast();
+  const [reportType, setReportType] = useState<string>('');
+  const [selectedSite, setSelectedSite] = useState<string>('');
+  const [dateRange, setDateRange] = useState({
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0]
+  });
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "financial":
-        return <DollarSign className="w-4 h-4" />;
-      case "site":
-        return <Building2 className="w-4 h-4" />;
-      case "hr":
-        return <Users className="w-4 h-4" />;
-      case "operational":
-        return <TrendingUp className="w-4 h-4" />;
-      default:
-        return <FileText className="w-4 h-4" />;
+  // Fetch sites
+  const { data: sites = [] } = useQuery({
+    queryKey: ['sites-for-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sites')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      return data as Site[];
+    }
+  });
+
+  // Fetch expenses for reports
+  const { data: expenses = [] } = useQuery({
+    queryKey: ['expenses-for-reports', selectedSite, dateRange],
+    queryFn: async () => {
+      let query = supabase
+        .from('expenses')
+        .select(`
+          *,
+          sites (name),
+          expense_categories (name, type)
+        `)
+        .gte('expense_date', dateRange.from)
+        .lte('expense_date', dateRange.to)
+        .order('expense_date', { ascending: false });
+      
+      if (selectedSite) {
+        query = query.eq('site_id', selectedSite);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as Expense[];
+    },
+    enabled: reportType === 'expenses' || reportType === 'financial'
+  });
+
+  // Fetch personnel for reports
+  const { data: personnel = [] } = useQuery({
+    queryKey: ['personnel-for-reports', selectedSite],
+    queryFn: async () => {
+      let query = supabase
+        .from('personnel')
+        .select(`
+          *,
+          sites (name)
+        `)
+        .order('full_name');
+      
+      if (selectedSite) {
+        query = query.eq('site_id', selectedSite);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as Personnel[];
+    },
+    enabled: reportType === 'personnel'
+  });
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 0
+    }).format(amount);
+  };
+
+  const generateSitesReportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text('Reporte de Sitios - Infratelc', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, pageWidth / 2, 30, { align: 'center' });
+
+    // Table data
+    const tableData = sites.map(site => [
+      site.name,
+      site.status,
+      formatCurrency(site.budget),
+      formatCurrency(site.spent),
+      formatCurrency(site.budget - site.spent),
+      `${((1 - site.spent / site.budget) * 100).toFixed(1)}%`
+    ]);
+
+    // Add table
+    (doc as any).autoTable({
+      head: [['Sitio', 'Estado', 'Presupuesto', 'Gastado', 'Disponible', 'Eficiencia']],
+      body: tableData,
+      startY: 40,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [51, 122, 183] }
+    });
+
+    // Summary
+    const totalBudget = sites.reduce((sum, site) => sum + site.budget, 0);
+    const totalSpent = sites.reduce((sum, site) => sum + site.spent, 0);
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+
+    doc.text(`Total Presupuestado: ${formatCurrency(totalBudget)}`, 20, finalY);
+    doc.text(`Total Gastado: ${formatCurrency(totalSpent)}`, 20, finalY + 10);
+    doc.text(`Total Disponible: ${formatCurrency(totalBudget - totalSpent)}`, 20, finalY + 20);
+
+    doc.save(`reporte-sitios-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const generateExpensesReportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text('Reporte de Gastos - Infratelc', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    const siteName = selectedSite ? sites.find(s => s.id === selectedSite)?.name : 'Todos los sitios';
+    doc.text(`Sitio: ${siteName}`, 20, 35);
+    doc.text(`Período: ${dateRange.from} a ${dateRange.to}`, 20, 45);
+    doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, 20, 55);
+
+    // Table data
+    const tableData = expenses.map(expense => [
+      new Date(expense.expense_date).toLocaleDateString('es-CL'),
+      expense.sites?.name || '',
+      expense.expense_categories?.name || '',
+      expense.description,
+      formatCurrency(expense.amount),
+      expense.document_number || ''
+    ]);
+
+    // Add table
+    (doc as any).autoTable({
+      head: [['Fecha', 'Sitio', 'Categoría', 'Descripción', 'Monto', 'Documento']],
+      body: tableData,
+      startY: 65,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [51, 122, 183] },
+      columnStyles: {
+        3: { cellWidth: 40 },
+        4: { halign: 'right' }
+      }
+    });
+
+    // Summary
+    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    
+    doc.setFontSize(12);
+    doc.text(`Total de Gastos: ${formatCurrency(totalExpenses)}`, 20, finalY);
+    doc.text(`Cantidad de Registros: ${expenses.length}`, 20, finalY + 10);
+
+    doc.save(`reporte-gastos-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const generatePersonnelReportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text('Reporte de Personal - Infratelc', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    const siteName = selectedSite ? sites.find(s => s.id === selectedSite)?.name : 'Todos los sitios';
+    doc.text(`Sitio: ${siteName}`, 20, 35);
+    doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, 20, 45);
+
+    // Table data
+    const tableData = personnel.map(person => [
+      person.full_name,
+      person.position,
+      person.sites?.name || 'Sin asignar',
+      person.status,
+      person.salary ? formatCurrency(person.salary) : 'No especificado',
+      person.email || '',
+      person.phone || ''
+    ]);
+
+    // Add table
+    (doc as any).autoTable({
+      head: [['Nombre', 'Cargo', 'Sitio', 'Estado', 'Salario', 'Email', 'Teléfono']],
+      body: tableData,
+      startY: 55,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [51, 122, 183] },
+      columnStyles: {
+        4: { halign: 'right' }
+      }
+    });
+
+    // Summary
+    const activePersonnel = personnel.filter(p => p.status === 'Activo').length;
+    const totalSalaries = personnel.reduce((sum, person) => sum + (person.salary || 0), 0);
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    
+    doc.setFontSize(12);
+    doc.text(`Total de Empleados: ${personnel.length}`, 20, finalY);
+    doc.text(`Personal Activo: ${activePersonnel}`, 20, finalY + 10);
+    doc.text(`Costo Total en Salarios: ${formatCurrency(totalSalaries)}`, 20, finalY + 20);
+
+    doc.save(`reporte-personal-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const generateExcelReport = () => {
+    const workbook = XLSX.utils.book_new();
+
+    // Sites sheet
+    if (reportType === 'sites' || reportType === 'financial') {
+      const sitesData = sites.map(site => ({
+        'Sitio': site.name,
+        'Estado': site.status,
+        'Presupuesto': site.budget,
+        'Gastado': site.spent,
+        'Disponible': site.budget - site.spent,
+        'Eficiencia (%)': ((1 - site.spent / site.budget) * 100).toFixed(1)
+      }));
+      
+      const sitesSheet = XLSX.utils.json_to_sheet(sitesData);
+      XLSX.utils.book_append_sheet(workbook, sitesSheet, 'Sitios');
+    }
+
+    // Expenses sheet
+    if (reportType === 'expenses' || reportType === 'financial') {
+      const expensesData = expenses.map(expense => ({
+        'Fecha': expense.expense_date,
+        'Sitio': expense.sites?.name || '',
+        'Categoría': expense.expense_categories?.name || '',
+        'Tipo': expense.expense_categories?.type || '',
+        'Descripción': expense.description,
+        'Monto': expense.amount,
+        'Documento': expense.document_number || ''
+      }));
+      
+      const expensesSheet = XLSX.utils.json_to_sheet(expensesData);
+      XLSX.utils.book_append_sheet(workbook, expensesSheet, 'Gastos');
+    }
+
+    // Personnel sheet
+    if (reportType === 'personnel') {
+      const personnelData = personnel.map(person => ({
+        'Nombre': person.full_name,
+        'Cargo': person.position,
+        'Sitio': person.sites?.name || 'Sin asignar',
+        'Estado': person.status,
+        'Salario': person.salary || 0,
+        'Email': person.email || '',
+        'Teléfono': person.phone || ''
+      }));
+      
+      const personnelSheet = XLSX.utils.json_to_sheet(personnelData);
+      XLSX.utils.book_append_sheet(workbook, personnelSheet, 'Personal');
+    }
+
+    XLSX.writeFile(workbook, `reporte-${reportType}-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const generateReport = (format: 'pdf' | 'excel') => {
+    if (!reportType) {
+      toast({
+        title: "Error",
+        description: "Selecciona un tipo de reporte primero.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      if (format === 'pdf') {
+        switch (reportType) {
+          case 'sites':
+            generateSitesReportPDF();
+            break;
+          case 'expenses':
+            generateExpensesReportPDF();
+            break;
+          case 'personnel':
+            generatePersonnelReportPDF();
+            break;
+          case 'financial':
+            generateSitesReportPDF(); // For financial, we'll generate sites report
+            break;
+        }
+      } else {
+        generateExcelReport();
+      }
+
+      toast({
+        title: "Reporte generado",
+        description: `El reporte se ha descargado exitosamente en formato ${format.toUpperCase()}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al generar el reporte. Inténtalo de nuevo.",
+        variant: "destructive"
+      });
     }
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "financial":
-        return "bg-success/10 text-success border-success/20";
-      case "site":
-        return "bg-primary/10 text-primary border-primary/20";
-      case "hr":
-        return "bg-accent/10 text-accent-foreground border-accent/20";
-      case "operational":
-        return "bg-warning/10 text-warning-foreground border-warning/20";
-      default:
-        return "bg-secondary/10 text-secondary-foreground border-secondary/20";
-    }
-  };
-
-  const getTypeText = (type: string) => {
-    switch (type) {
-      case "financial":
-        return "Financiero";
-      case "site":
-        return "Sitios";
-      case "hr":
-        return "RRHH";
-      case "operational":
-        return "Operacional";
-      default:
-        return type;
-    }
-  };
-
-  const getFrequencyText = (frequency: string) => {
-    switch (frequency) {
-      case "daily":
-        return "Diario";
-      case "weekly":
-        return "Semanal";
-      case "monthly":
-        return "Mensual";
-      case "on-demand":
-        return "Bajo demanda";
-      default:
-        return frequency;
-    }
-  };
-
-  const quickReports = [
-    {
-      name: "Gastos Tetillas",
-      description: "Reporte inmediato del sitio Tetillas",
-      icon: Building2,
-      color: "primary"
-    },
-    {
-      name: "Resumen Financiero",
-      description: "Estado financiero consolidado",
-      icon: DollarSign,
-      color: "success"
-    },
-    {
-      name: "Personal Activo",
-      description: "Lista de personal por sitio",
-      icon: Users,
-      color: "accent"
-    }
+  const reportTypes = [
+    { value: 'sites', label: 'Reporte de Sitios', icon: Building2 },
+    { value: 'expenses', label: 'Reporte de Gastos', icon: DollarSign },
+    { value: 'personnel', label: 'Reporte de Personal', icon: Users },
+    { value: 'financial', label: 'Reporte Financiero Completo', icon: FileText }
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Reportes</h2>
-          <p className="text-muted-foreground">
-            Genera y gestiona reportes administrativos y financieros
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Filtros
-          </Button>
-          <Button className="bg-gradient-primary hover:bg-primary-hover">
-            <FileText className="w-4 h-4 mr-2" />
-            Nuevo Reporte
-          </Button>
-        </div>
+      <div>
+        <h2 className="text-3xl font-bold text-foreground mb-2">Gestión de Reportes</h2>
+        <p className="text-muted-foreground">
+          Genera reportes detallados en PDF y Excel
+        </p>
       </div>
 
-      {/* Quick Reports */}
+      {/* Report Configuration */}
       <Card>
         <CardHeader>
-          <CardTitle>Reportes Rápidos</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5" />
+            Configuración del Reporte
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Tipo de Reporte</Label>
+              <Select value={reportType} onValueChange={setReportType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar tipo de reporte" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reportTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      <div className="flex items-center gap-2">
+                        <type.icon className="w-4 h-4" />
+                        {type.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Sitio (Opcional)</Label>
+              <Select value={selectedSite} onValueChange={setSelectedSite}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos los sitios" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Todos los sitios</SelectItem>
+                  {sites.map((site) => (
+                    <SelectItem key={site.id} value={site.id}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {(reportType === 'expenses' || reportType === 'financial') && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Fecha Inicio</Label>
+                <input
+                  type="date"
+                  value={dateRange.from}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha Fin</Label>
+                <input
+                  type="date"
+                  value={dateRange.to}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Generate Reports */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="w-5 h-5" />
+            Generar Reportes
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {quickReports.map((report, index) => {
-              const Icon = report.icon;
-              return (
-                <Button 
-                  key={index}
-                  variant="outline" 
-                  className="p-6 h-auto flex-col gap-3 hover:shadow-md transition-all"
-                >
-                  <Icon className="w-8 h-8 text-primary" />
-                  <div className="text-center">
-                    <p className="font-medium">{report.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{report.description}</p>
-                  </div>
-                </Button>
-              );
-            })}
+          <div className="flex gap-4">
+            <Button 
+              onClick={() => generateReport('pdf')}
+              className="flex-1"
+              disabled={!reportType}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Descargar PDF
+            </Button>
+            <Button 
+              onClick={() => generateReport('excel')}
+              variant="outline"
+              className="flex-1"
+              disabled={!reportType}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Descargar Excel
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Available Reports */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Reportes Disponibles</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {reports.map((report) => (
-              <div key={report.id} className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-secondary/30 transition-colors">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                    {getTypeIcon(report.type)}
+      {/* Report Preview */}
+      {reportType && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vista Previa del Reporte</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {reportType === 'sites' && (
+              <div className="space-y-4">
+                <h4 className="font-medium">Sitios a incluir: {sites.length}</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Total Presupuestado</p>
+                    <p className="text-lg">{formatCurrency(sites.reduce((sum, site) => sum + site.budget, 0))}</p>
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="font-medium text-foreground">{report.name}</h3>
-                      <Badge variant="outline" className={getTypeColor(report.type)}>
-                        {getTypeText(report.type)}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">{report.description}</p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        Último: {new Date(report.lastGenerated).toLocaleDateString('es-CL')}
-                      </div>
-                      <span>Formato: {report.format}</span>
-                      <span>Frecuencia: {getFrequencyText(report.frequency)}</span>
-                    </div>
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Total Gastado</p>
+                    <p className="text-lg">{formatCurrency(sites.reduce((sum, site) => sum + site.spent, 0))}</p>
                   </div>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm">
-                    <Eye className="w-4 h-4 mr-1" />
-                    Ver
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    Descargar
-                  </Button>
-                  <Button size="sm" className="bg-gradient-primary hover:bg-primary-hover">
-                    Generar
-                  </Button>
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Eficiencia Promedio</p>
+                    <p className="text-lg">{(sites.reduce((sum, site) => sum + (1 - site.spent / site.budget), 0) / sites.length * 100).toFixed(1)}%</p>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            )}
 
-      {/* Report Templates */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Plantillas Personalizadas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card className="border-dashed border-2 border-border hover:border-primary/50 transition-colors cursor-pointer">
-              <CardContent className="p-6 text-center">
-                <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-medium mb-2">Crear Plantilla</h3>
-                <p className="text-sm text-muted-foreground">
-                  Diseña un reporte personalizado para tus necesidades específicas
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-primary" />
+            {reportType === 'expenses' && (
+              <div className="space-y-4">
+                <h4 className="font-medium">Gastos a incluir: {expenses.length}</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Total de Gastos</p>
+                    <p className="text-lg">{formatCurrency(expenses.reduce((sum, expense) => sum + expense.amount, 0))}</p>
                   </div>
-                  <h3 className="font-medium">Gastos por Categoría</h3>
-                </div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Análisis detallado de gastos agrupados por categoría y tipo
-                </p>
-                <Button variant="outline" size="sm" className="w-full">
-                  Usar Plantilla
-                </Button>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 bg-success/10 rounded flex items-center justify-center">
-                    <TrendingUp className="w-4 h-4 text-success" />
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Período</p>
+                    <p className="text-lg">{dateRange.from} a {dateRange.to}</p>
                   </div>
-                  <h3 className="font-medium">Eficiencia Presupuestal</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Comparativo de eficiencia entre sitios y períodos
-                </p>
-                <Button variant="outline" size="sm" className="w-full">
-                  Usar Plantilla
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
+            )}
+
+            {reportType === 'personnel' && (
+              <div className="space-y-4">
+                <h4 className="font-medium">Personal a incluir: {personnel.length}</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Personal Activo</p>
+                    <p className="text-lg">{personnel.filter(p => p.status === 'Activo').length}</p>
+                  </div>
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">En Vacaciones</p>
+                    <p className="text-lg">{personnel.filter(p => p.status === 'Vacaciones').length}</p>
+                  </div>
+                  <div className="p-3 bg-secondary/20 rounded">
+                    <p className="font-medium">Costo Total Salarios</p>
+                    <p className="text-lg">{formatCurrency(personnel.reduce((sum, person) => sum + (person.salary || 0), 0))}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
