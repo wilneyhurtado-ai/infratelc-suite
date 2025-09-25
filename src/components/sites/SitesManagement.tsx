@@ -27,6 +27,9 @@ const SitesManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [selectedSiteForExpenses, setSelectedSiteForExpenses] = useState<Site | null>(null);
   const [newSite, setNewSite] = useState({
     name: '',
     budget: '',
@@ -82,7 +85,66 @@ const SitesManagement = () => {
     }
   });
 
-  const handleCreateSite = (e: React.FormEvent) => {
+  // Update site mutation
+  const updateSiteMutation = useMutation({
+    mutationFn: async ({ id, ...siteData }: any) => {
+      const { data, error } = await supabase
+        .from('sites')
+        .update({
+          name: siteData.name,
+          budget: parseFloat(siteData.budget),
+          description: siteData.description,
+          status: siteData.status
+        })
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites'] });
+      setIsEditDialogOpen(false);
+      setEditingSite(null);
+      toast({
+        title: "Sitio actualizado",
+        description: "El sitio se ha actualizado correctamente.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Error al actualizar el sitio: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Delete site mutation
+  const deleteSiteMutation = useMutation({
+    mutationFn: async (siteId: string) => {
+      const { error } = await supabase
+        .from('sites')
+        .delete()
+        .eq('id', siteId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites'] });
+      toast({
+        title: "Sitio eliminado",
+        description: "El sitio se ha eliminado correctamente.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Error al eliminar el sitio: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  });
     e.preventDefault();
     if (!newSite.name || !newSite.budget) {
       toast({
@@ -214,6 +276,98 @@ const SitesManagement = () => {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Site Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar Sitio</DialogTitle>
+            </DialogHeader>
+            {editingSite && (
+              <form onSubmit={handleUpdateSite} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Nombre del Sitio</Label>
+                  <Input
+                    id="edit-name"
+                    value={editingSite.name}
+                    onChange={(e) => setEditingSite(prev => prev ? { ...prev, name: e.target.value } : null)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-budget">Presupuesto (CLP)</Label>
+                  <Input
+                    id="edit-budget"
+                    type="number"
+                    value={editingSite.budget}
+                    onChange={(e) => setEditingSite(prev => prev ? { ...prev, budget: parseFloat(e.target.value) } : null)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-status">Estado</Label>
+                  <Select value={editingSite.status} onValueChange={(value) => setEditingSite(prev => prev ? { ...prev, status: value } : null)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Planificado">Planificado</SelectItem>
+                      <SelectItem value="En progreso">En progreso</SelectItem>
+                      <SelectItem value="Completado">Completado</SelectItem>
+                      <SelectItem value="Suspendido">Suspendido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-description">Descripción</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editingSite.description || ''}
+                    onChange={(e) => setEditingSite(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    rows={3}
+                  />
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={updateSiteMutation.isPending}>
+                    {updateSiteMutation.isPending ? 'Actualizando...' : 'Actualizar'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Expenses Dialog */}
+        {selectedSiteForExpenses && (
+          <Dialog open={!!selectedSiteForExpenses} onOpenChange={() => setSelectedSiteForExpenses(null)}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>Gastos de {selectedSiteForExpenses.name}</DialogTitle>
+              </DialogHeader>
+              <div className="p-4">
+                <p className="text-muted-foreground">
+                  Funcionalidad de gastos por sitio - Se implementará en la sección de Gastos
+                </p>
+                <Button 
+                  onClick={() => {
+                    setSelectedSiteForExpenses(null);
+                    // Aquí podrías navegar a la pestaña de gastos con el sitio seleccionado
+                  }}
+                  className="mt-4"
+                >
+                  Ir a Gestión de Gastos
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Sites Grid */}
@@ -276,12 +430,29 @@ const SitesManagement = () => {
                 </div>
                 
                 <div className="flex gap-2 pt-2">
-                  <Button size="sm" variant="outline" className="flex-1">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={() => handleEditSite(site)}
+                  >
                     <Edit className="w-3 h-3 mr-1" />
                     Editar
                   </Button>
-                  <Button size="sm" variant="outline" className="flex-1">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={() => setSelectedSiteForExpenses(site)}
+                  >
                     Ver Gastos
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="destructive" 
+                    onClick={() => handleDeleteSite(site.id)}
+                  >
+                    <Trash2 className="w-3 h-3" />
                   </Button>
                 </div>
               </CardContent>
