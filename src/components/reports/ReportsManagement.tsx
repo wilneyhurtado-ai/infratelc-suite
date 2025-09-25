@@ -54,7 +54,7 @@ const ReportsManagement = () => {
     queryKey: ['sites-for-reports'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('*')
         .order('name');
       

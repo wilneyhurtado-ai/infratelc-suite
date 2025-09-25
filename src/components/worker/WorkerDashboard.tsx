@@ -76,9 +76,9 @@ const WorkerDashboard = () => {
     queryKey: ['sites'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('*')
-        .eq('status', 'En Curso');
+        .eq('status', 'operational');
       if (error) throw error;
       return data;
     },

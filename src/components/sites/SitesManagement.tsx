@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,46 +22,88 @@ interface Site {
   description?: string;
   start_date?: string;
   end_date?: string;
+  site_code: string;
+  site_type: string;
+  address?: string;
+  region?: string;
+  comuna?: string;
+  client_id?: string;
+  tenant_id: string;
 }
 
 const SitesManagement = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Get user profile for tenant_id
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [selectedSiteForExpenses, setSelectedSiteForExpenses] = useState<Site | null>(null);
   const [newSite, setNewSite] = useState({
     name: '',
+    site_code: '',
     budget: '',
     description: '',
-    status: 'Planificado'
+    status: 'planned',
+    site_type: 'antenna',
+    address: '',
+    region: '',
+    comuna: ''
   });
 
   // Fetch sites
   const { data: sites = [], isLoading } = useQuery({
-    queryKey: ['sites'],
+    queryKey: ['sites', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
+      
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('*')
+        .eq('tenant_id', userProfile.tenant_id)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data as Site[];
-    }
+    },
+    enabled: !!userProfile?.tenant_id
   });
 
   // Create site mutation
   const createSiteMutation = useMutation({
     mutationFn: async (siteData: any) => {
+      if (!userProfile?.tenant_id) throw new Error('No tenant ID available');
+      
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .insert([{
           name: siteData.name,
+          site_code: siteData.site_code,
           budget: parseFloat(siteData.budget),
           description: siteData.description,
-          status: siteData.status
+          status: siteData.status,
+          site_type: siteData.site_type,
+          address: siteData.address,
+          region: siteData.region,
+          comuna: siteData.comuna,
+          tenant_id: userProfile.tenant_id
         }])
         .select();
       
@@ -70,7 +113,17 @@ const SitesManagement = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] });
       setIsAddDialogOpen(false);
-      setNewSite({ name: '', budget: '', description: '', status: 'Planificado' });
+      setNewSite({ 
+        name: '', 
+        site_code: '', 
+        budget: '', 
+        description: '', 
+        status: 'planned', 
+        site_type: 'antenna',
+        address: '',
+        region: '',
+        comuna: ''
+      });
       toast({
         title: "Sitio creado",
         description: "El sitio se ha creado correctamente.",
@@ -89,12 +142,16 @@ const SitesManagement = () => {
   const updateSiteMutation = useMutation({
     mutationFn: async ({ id, ...siteData }: any) => {
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .update({
           name: siteData.name,
+          site_code: siteData.site_code,
           budget: parseFloat(siteData.budget.toString()),
           description: siteData.description,
-          status: siteData.status
+          status: siteData.status,
+          address: siteData.address,
+          region: siteData.region,
+          comuna: siteData.comuna
         })
         .eq('id', id)
         .select();
@@ -124,7 +181,7 @@ const SitesManagement = () => {
   const deleteSiteMutation = useMutation({
     mutationFn: async (siteId: string) => {
       const { error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .delete()
         .eq('id', siteId);
       
@@ -148,10 +205,10 @@ const SitesManagement = () => {
 
   const handleCreateSite = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSite.name || !newSite.budget) {
+    if (!newSite.name || !newSite.site_code || !newSite.budget) {
       toast({
         title: "Error de validación",
-        description: "Nombre y presupuesto son requeridos.",
+        description: "Nombre, código y presupuesto son requeridos.",
         variant: "destructive"
       });
       return;
@@ -186,10 +243,13 @@ const SitesManagement = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'construction':
       case 'En progreso':
         return 'bg-warning/20 text-warning';
+      case 'operational':
       case 'Completado':
         return 'bg-success/20 text-success';
+      case 'maintenance':
       case 'Suspendido':
         return 'bg-destructive/20 text-destructive';
       default:
@@ -247,6 +307,17 @@ const SitesManagement = () => {
               </div>
               
               <div className="space-y-2">
+                <Label htmlFor="site_code">Código del Sitio</Label>
+                <Input
+                  id="site_code"
+                  value={newSite.site_code}
+                  onChange={(e) => setNewSite(prev => ({ ...prev, site_code: e.target.value }))}
+                  placeholder="Ej: ANT-001"
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
                 <Label htmlFor="budget">Presupuesto (CLP)</Label>
                 <Input
                   id="budget"
@@ -259,18 +330,64 @@ const SitesManagement = () => {
               </div>
               
               <div className="space-y-2">
+                <Label htmlFor="site_type">Tipo de Sitio</Label>
+                <Select value={newSite.site_type} onValueChange={(value) => setNewSite(prev => ({ ...prev, site_type: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="antenna">Antena</SelectItem>
+                    <SelectItem value="tower">Torre</SelectItem>
+                    <SelectItem value="building">Edificio</SelectItem>
+                    <SelectItem value="infrastructure">Infraestructura</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
                 <Label htmlFor="status">Estado</Label>
                 <Select value={newSite.status} onValueChange={(value) => setNewSite(prev => ({ ...prev, status: value }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Planificado">Planificado</SelectItem>
-                    <SelectItem value="En progreso">En progreso</SelectItem>
-                    <SelectItem value="Completado">Completado</SelectItem>
-                    <SelectItem value="Suspendido">Suspendido</SelectItem>
+                    <SelectItem value="planned">Planificado</SelectItem>
+                    <SelectItem value="construction">En Construcción</SelectItem>
+                    <SelectItem value="testing">En Pruebas</SelectItem>
+                    <SelectItem value="operational">Operativo</SelectItem>
+                    <SelectItem value="maintenance">Mantenimiento</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="address">Dirección</Label>
+                  <Input
+                    id="address"
+                    value={newSite.address}
+                    onChange={(e) => setNewSite(prev => ({ ...prev, address: e.target.value }))}
+                    placeholder="Dirección del sitio"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="region">Región</Label>
+                  <Input
+                    id="region"
+                    value={newSite.region}
+                    onChange={(e) => setNewSite(prev => ({ ...prev, region: e.target.value }))}
+                    placeholder="Región"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="comuna">Comuna</Label>
+                  <Input
+                    id="comuna"
+                    value={newSite.comuna}
+                    onChange={(e) => setNewSite(prev => ({ ...prev, comuna: e.target.value }))}
+                    placeholder="Comuna"
+                  />
+                </div>
               </div>
               
               <div className="space-y-2">

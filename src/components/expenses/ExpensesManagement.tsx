@@ -79,7 +79,7 @@ const ExpensesManagement = () => {
     queryKey: ['sites-for-expenses'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('id, name')
         .order('name');
       

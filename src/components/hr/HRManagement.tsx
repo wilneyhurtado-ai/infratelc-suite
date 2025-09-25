@@ -69,7 +69,7 @@ const HRManagement = () => {
     queryKey: ['sites-for-personnel'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('id, name')
         .order('name');
       

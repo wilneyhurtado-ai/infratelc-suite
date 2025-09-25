@@ -35,9 +35,9 @@ export const MobileExpenseForm: React.FC<ExpenseFormProps> = ({ onClose }) => {
     queryKey: ['sites-mobile'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('sites')
+        .from('sites_enhanced')
         .select('id, name')
-        .eq('status', 'Activo');
+        .eq('status', 'operational');
       return data || [];
     }
   });
