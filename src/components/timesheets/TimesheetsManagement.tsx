@@ -29,6 +29,22 @@ const TimesheetsManagement = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Get user profile for tenant_id
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
   const [isTimesheetDialogOpen, setIsTimesheetDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -46,8 +62,10 @@ const TimesheetsManagement = () => {
 
   // Fetch timesheets
   const { data: timesheets = [], isLoading: timesheetsLoading } = useQuery({
-    queryKey: ['timesheets', selectedDate],
+    queryKey: ['timesheets', selectedDate, userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
+      
       const startDate = selectedDate;
       const endDate = new Date(selectedDate);
       endDate.setDate(endDate.getDate() + 6); // Week view
@@ -59,6 +77,7 @@ const TimesheetsManagement = () => {
           sites_enhanced (name, site_code),
           work_orders (title, order_number)
         `)
+        .eq('tenant_id', userProfile.tenant_id)
         .gte('date', startDate)
         .lte('date', endDate.toISOString().split('T')[0])
         .order('date', { ascending: false });
@@ -66,48 +85,61 @@ const TimesheetsManagement = () => {
       if (error) throw error;
       return data;
     },
+    enabled: !!userProfile?.tenant_id
   });
 
   // Fetch employees
   const { data: employees = [] } = useQuery({
-    queryKey: ['timesheet-employees'],
+    queryKey: ['timesheet-employees', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
+      
       const { data, error } = await supabase
         .from('personnel')
         .select('*')
-        .eq('status', 'Activo');
+        .eq('status', 'Activo')
+        .eq('tenant_id', userProfile.tenant_id);
       
       if (error) throw error;
       return data;
     },
+    enabled: !!userProfile?.tenant_id
   });
 
   // Fetch sites
   const { data: sites = [] } = useQuery({
-    queryKey: ['timesheet-sites'],
+    queryKey: ['timesheet-sites', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
+      
       const { data, error } = await supabase
         .from('sites_enhanced')
         .select('*')
+        .eq('tenant_id', userProfile.tenant_id)
         .in('status', ['construction', 'testing', 'operational', 'maintenance']);
       
       if (error) throw error;
       return data;
     },
+    enabled: !!userProfile?.tenant_id
   });
 
   // Fetch work orders
   const { data: workOrders = [] } = useQuery({
-    queryKey: ['timesheet-workorders'],
+    queryKey: ['timesheet-workorders', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
+      
       const { data, error } = await supabase
         .from('work_orders')
         .select('*')
+        .eq('tenant_id', userProfile.tenant_id)
         .in('status', ['assigned', 'in_progress']);
       
       if (error) throw error;
       return data;
     },
+    enabled: !!userProfile?.tenant_id
   });
 
   // Create timesheet mutation
@@ -138,7 +170,7 @@ const TimesheetsManagement = () => {
           break_end_time: timesheetData.break_end_time ? `${timesheetData.date}T${timesheetData.break_end_time}:00.000Z` : null,
           total_hours: totalHours,
           overtime_hours: overtimeHours,
-          tenant_id: 'demo-tenant-id'
+          tenant_id: userProfile?.tenant_id
         });
       
       if (error) throw error;

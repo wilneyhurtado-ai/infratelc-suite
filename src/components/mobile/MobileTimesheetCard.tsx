@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useMobile } from '@/hooks/use-mobile';
 import { supabase } from '@/integrations/supabase/client';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Clock, MapPin, Play, Square } from 'lucide-react';
@@ -17,6 +17,22 @@ export const MobileTimesheetCard: React.FC<TimesheetCardProps> = ({ timesheet })
   const { user } = useAuth();
   const { getCurrentPosition } = useMobile();
   const queryClient = useQueryClient();
+  
+  // Get user profile for tenant_id
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
 
   const timesheetMutation = useMutation({
     mutationFn: async ({ action, updates }: { action: 'check_in' | 'check_out'; updates: any }) => {
@@ -27,6 +43,7 @@ export const MobileTimesheetCard: React.FC<TimesheetCardProps> = ({ timesheet })
           employee_id: user?.id,
           date: today,
           check_in_time: new Date().toISOString(),
+          tenant_id: userProfile?.tenant_id,
           ...updates
         });
         if (error) throw error;
