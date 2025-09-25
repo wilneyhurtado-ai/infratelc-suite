@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +31,25 @@ interface Site {
 }
 
 const HRManagement = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch user profile to get tenant_id
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingPersonnel, setEditingPersonnel] = useState<Personnel | null>(null);
@@ -47,40 +65,47 @@ const HRManagement = () => {
 
   // Fetch personnel
   const { data: personnel = [], isLoading } = useQuery({
-    queryKey: ['personnel'],
+    queryKey: ['personnel', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('personnel')
         .select(`
           *,
-          sites (
+          sites_enhanced!sites_enhanced_id_fkey (
             name
           )
         `)
+        .eq('tenant_id', userProfile.tenant_id)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data as Personnel[];
-    }
+    },
+    enabled: !!userProfile?.tenant_id,
   });
 
   // Fetch sites for dropdown
   const { data: sites = [] } = useQuery({
-    queryKey: ['sites-for-personnel'],
+    queryKey: ['sites-for-personnel', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('sites_enhanced')
         .select('id, name')
+        .eq('tenant_id', userProfile.tenant_id)
         .order('name');
       
       if (error) throw error;
       return data as Site[];
-    }
+    },
+    enabled: !!userProfile?.tenant_id,
   });
 
   // Create personnel mutation
   const createPersonnelMutation = useMutation({
     mutationFn: async (personnelData: any) => {
+      if (!userProfile?.tenant_id) throw new Error('No tenant found');
       const { data, error } = await supabase
         .from('personnel')
         .insert([{
@@ -91,6 +116,7 @@ const HRManagement = () => {
           email: personnelData.email || null,
           phone: personnelData.phone || null,
           status: personnelData.status,
+          tenant_id: userProfile.tenant_id,
           hire_date: new Date().toISOString().split('T')[0]
         }])
         .select();
@@ -99,7 +125,7 @@ const HRManagement = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      queryClient.invalidateQueries({ queryKey: ['personnel', userProfile?.tenant_id] });
       setIsAddDialogOpen(false);
       setNewPersonnel({
         full_name: '',
@@ -145,7 +171,7 @@ const HRManagement = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      queryClient.invalidateQueries({ queryKey: ['personnel', userProfile?.tenant_id] });
       setIsEditDialogOpen(false);
       setEditingPersonnel(null);
       toast({
@@ -173,7 +199,7 @@ const HRManagement = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      queryClient.invalidateQueries({ queryKey: ['personnel', userProfile?.tenant_id] });
       toast({
         title: "Personal eliminado",
         description: "El empleado se ha eliminado correctamente.",

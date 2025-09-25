@@ -71,17 +71,36 @@ const WorkerDashboard = () => {
     enabled: !!user,
   });
 
+  // Get user profile for tenant_id
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   // Fetch sites for selection
   const { data: sites = [] } = useQuery({
-    queryKey: ['sites'],
+    queryKey: ['sites', userProfile?.tenant_id],
     queryFn: async () => {
+      if (!userProfile?.tenant_id) return [];
       const { data, error } = await supabase
         .from('sites_enhanced')
         .select('*')
+        .eq('tenant_id', userProfile.tenant_id)
         .eq('status', 'operational');
       if (error) throw error;
       return data;
     },
+    enabled: !!userProfile?.tenant_id,
   });
 
   // Fetch expense categories
