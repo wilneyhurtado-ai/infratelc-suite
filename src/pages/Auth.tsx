@@ -1,217 +1,268 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Building2, Loader2 } from 'lucide-react';
+import { Building2, Mail, Lock, User } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres')
 });
 
 const signupSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  fullName: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
+  fullName: z.string().min(2, 'El nombre debe tener al menos 2 caracteres')
 });
 
 const Auth = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('login');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      navigate('/');
+    }
+  }, [user, navigate]);
+
+  const [loginForm, setLoginForm] = useState({
+    email: '',
+    password: ''
+  });
+
+  const [signupForm, setSignupForm] = useState({
+    email: '',
+    password: '',
+    fullName: ''
+  });
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError('');
-
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    setLoading(true);
 
     try {
-      const validation = loginSchema.parse({ email, password });
-      const { error } = await signIn(validation.email, validation.password);
+      const validatedData = loginSchema.parse(loginForm);
+      const { error } = await signIn(validatedData.email, validatedData.password);
       
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
-          setError('Credenciales inválidas');
+          toast({
+            title: "Error de autenticación",
+            description: "Credenciales inválidas. Verifica tu email y contraseña.",
+            variant: "destructive"
+          });
         } else {
-          setError(error.message);
+          toast({
+            title: "Error de inicio de sesión",
+            description: error.message,
+            variant: "destructive"
+          });
         }
       } else {
+        toast({
+          title: "¡Bienvenido!",
+          description: "Has iniciado sesión correctamente.",
+        });
         navigate('/');
       }
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setError(err.issues[0].message);
-      } else {
-        setError('Error inesperado');
+        toast({
+          title: "Error de validación",
+          description: err.issues[0].message,
+          variant: "destructive"
+        });
       }
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError('');
-    setSuccess('');
-
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const fullName = formData.get('fullName') as string;
+    setLoading(true);
 
     try {
-      const validation = signupSchema.parse({ email, password, fullName });
-      const { error } = await signUp(validation.email, validation.password, validation.fullName);
+      const validatedData = signupSchema.parse(signupForm);
+      const { error } = await signUp(validatedData.email, validatedData.password, validatedData.fullName);
       
       if (error) {
         if (error.message.includes('User already registered')) {
-          setError('El usuario ya está registrado');
+          toast({
+            title: "Usuario ya existe",
+            description: "Este email ya está registrado. Intenta iniciar sesión.",
+            variant: "destructive"
+          });
         } else {
-          setError(error.message);
+          toast({
+            title: "Error de registro",
+            description: error.message,
+            variant: "destructive"
+          });
         }
       } else {
-        setSuccess('¡Cuenta creada exitosamente! Revisa tu email para confirmar tu cuenta.');
+        toast({
+          title: "¡Registro exitoso!",
+          description: "Por favor revisa tu email para confirmar tu cuenta.",
+        });
+        setActiveTab('login');
       }
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setError(err.issues[0].message);
-      } else {
-        setError('Error inesperado');
+        toast({
+          title: "Error de validación",
+          description: err.issues[0].message,
+          variant: "destructive"
+        });
       }
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
+        {/* Logo/Header */}
         <div className="text-center space-y-2">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-            <Building2 className="w-6 h-6 text-primary-foreground" />
+          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary/70 rounded-xl flex items-center justify-center">
+            <Building2 className="w-8 h-8 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Infratelc</h1>
           <p className="text-muted-foreground">Sistema de Gestión Administrativa</p>
         </div>
 
-        <Card className="border-border/50 shadow-lg">
-          <CardHeader>
-            <CardTitle>Acceso al Sistema</CardTitle>
-            <CardDescription>
-              Ingresa tus credenciales para acceder
-            </CardDescription>
+        <Card className="border-border/50 shadow-xl">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-xl text-center">Acceso al Sistema</CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="login" className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
                 <TabsTrigger value="signup">Registrarse</TabsTrigger>
               </TabsList>
-
-              <TabsContent value="login">
+              
+              <TabsContent value="login" className="space-y-4 mt-6">
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="tu@email.com"
-                      required
-                      disabled={isLoading}
-                    />
+                    <Label htmlFor="login-email">Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-email"
+                        type="email"
+                        placeholder="tu.email@infratelc.cl"
+                        className="pl-10"
+                        value={loginForm.email}
+                        onChange={(e) => setLoginForm(prev => ({ ...prev, email: e.target.value }))}
+                        required
+                      />
+                    </div>
                   </div>
+                  
                   <div className="space-y-2">
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      placeholder="••••••"
-                      required
-                      disabled={isLoading}
-                    />
+                    <Label htmlFor="login-password">Contraseña</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-password"
+                        type="password"
+                        placeholder="Tu contraseña"
+                        className="pl-10"
+                        value={loginForm.password}
+                        onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
+                        required
+                      />
+                    </div>
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Iniciar Sesión
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full"
+                    disabled={loading}
+                  >
+                    {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
                   </Button>
                 </form>
               </TabsContent>
-
-              <TabsContent value="signup">
+              
+              <TabsContent value="signup" className="space-y-4 mt-6">
                 <form onSubmit={handleSignup} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="fullName">Nombre Completo</Label>
-                    <Input
-                      id="fullName"
-                      name="fullName"
-                      type="text"
-                      placeholder="Juan Pérez"
-                      required
-                      disabled={isLoading}
-                    />
+                    <Label htmlFor="signup-name">Nombre Completo</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="Tu nombre completo"
+                        className="pl-10"
+                        value={signupForm.fullName}
+                        onChange={(e) => setSignupForm(prev => ({ ...prev, fullName: e.target.value }))}
+                        required
+                      />
+                    </div>
                   </div>
+                  
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="tu@email.com"
-                      required
-                      disabled={isLoading}
-                    />
+                    <Label htmlFor="signup-email">Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="tu.email@infratelc.cl"
+                        className="pl-10"
+                        value={signupForm.email}
+                        onChange={(e) => setSignupForm(prev => ({ ...prev, email: e.target.value }))}
+                        required
+                      />
+                    </div>
                   </div>
+                  
                   <div className="space-y-2">
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      placeholder="••••••"
-                      required
-                      disabled={isLoading}
-                    />
+                    <Label htmlFor="signup-password">Contraseña</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="Mínimo 6 caracteres"
+                        className="pl-10"
+                        value={signupForm.password}
+                        onChange={(e) => setSignupForm(prev => ({ ...prev, password: e.target.value }))}
+                        required
+                      />
+                    </div>
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Crear Cuenta
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full"
+                    disabled={loading}
+                  >
+                    {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
                   </Button>
                 </form>
               </TabsContent>
             </Tabs>
-
-            {error && (
-              <Alert className="mt-4 border-destructive">
-                <AlertDescription className="text-destructive">
-                  {error}
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {success && (
-              <Alert className="mt-4 border-success">
-                <AlertDescription className="text-success">
-                  {success}
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
+        
+        <p className="text-center text-sm text-muted-foreground">
+          Sistema de gestión para proyectos de ingeniería civil
+        </p>
       </div>
     </div>
   );
