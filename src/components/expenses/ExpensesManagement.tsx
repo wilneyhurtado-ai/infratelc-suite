@@ -64,7 +64,7 @@ const ExpensesManagement = () => {
         `)
         .order('expense_date', { ascending: false });
       
-      if (selectedSite) {
+      if (selectedSite && selectedSite !== 'all-sites') {
         query = query.eq('site_id', selectedSite);
       }
       
