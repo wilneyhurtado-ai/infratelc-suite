@@ -15,6 +15,7 @@ import CRMManagement from '@/components/crm/CRMManagement';
 import FieldOperationsManagement from '@/components/operations/FieldOperationsManagement';
 import PayrollManagement from '@/components/payroll/PayrollManagement';
 import TimesheetsManagement from '@/components/timesheets/TimesheetsManagement';
+import SettingsManagement from '@/components/settings/SettingsManagement';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -98,12 +99,7 @@ const Index = () => {
       case "worker-dashboard":
         return <WorkerDashboard />;
       case "settings":
-        return (
-          <div className="space-y-6">
-            <h2 className="text-3xl font-bold text-foreground">Configuración</h2>
-            <p className="text-muted-foreground">Próximamente: configuración del sistema</p>
-          </div>
-        );
+        return <SettingsManagement />;
       default:
         return <Dashboard />;
     }
