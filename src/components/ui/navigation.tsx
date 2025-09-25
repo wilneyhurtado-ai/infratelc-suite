@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import UserMenu from "@/components/ui/user-menu";
 import { 
   Building2, 
   BarChart3, 
@@ -27,14 +28,17 @@ const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
   return (
     <nav className="bg-card border-r border-border h-screen w-64 fixed left-0 top-0 z-30">
       <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
-            <Building2 className="w-6 h-6 text-primary-foreground" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
+              <Building2 className="w-6 h-6 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Infratelc</h1>
+              <p className="text-sm text-muted-foreground">Gestión Administrativa</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Infratelc</h1>
-            <p className="text-sm text-muted-foreground">Gestión Administrativa</p>
-          </div>
+          <UserMenu />
         </div>
         
         <div className="space-y-2">
