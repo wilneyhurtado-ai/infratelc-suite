@@ -239,9 +239,19 @@ const PayrollManagement = () => {
     return currentRates && employees.length > 0;
   };
 
-  // Generate pay slip PDF
+  // Generate pay slip PDF with exact format from template
   const generatePaySlipPDF = async (runId: string, employeeId?: string) => {
     try {
+      // Get payroll run details
+      const { data: payrollRun, error: runError } = await supabase
+        .from('payroll_runs')
+        .select('*')
+        .eq('id', runId)
+        .single();
+
+      if (runError) throw runError;
+
+      // Get payroll items
       const { data: payrollItems, error } = await supabase
         .from('payroll_items')
         .select('*')
@@ -258,69 +268,180 @@ const PayrollManagement = () => {
         return;
       }
 
+      // Get company info from profiles
+      const { data: companyProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user?.id)
+        .single();
+
       const doc = new jsPDF();
       
       // Generate liquidation for each employee
       payrollItems.forEach((item, index) => {
         if (index > 0) doc.addPage();
         
-        // Header
-        doc.setFontSize(18);
-        doc.text('LIQUIDACIÓN DE SUELDO', 20, 20);
+        // Website header
+        doc.setFontSize(8);
+        doc.text('www.infratelc.cl', 14, 15);
+        
+        // Main title
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text('LIQUIDACION DE SUELDO', 75, 25);
+        
+        // Period header
         doc.setFontSize(12);
-        doc.text(`Período: ${item.payroll_run_id}`, 20, 35);
-        doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 140, 35);
+        doc.setFont('helvetica', 'bold');
+        const periodDate = new Date(payrollRun.period + '-01');
+        const monthName = periodDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+        doc.text(`REMUNERACIONES MES DE: ${monthName.toUpperCase()}`, 55, 35);
+        
+        // Company info table
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.rect(14, 45, 182, 25);
+        doc.line(14, 55, 196, 55);
+        doc.line(14, 65, 196, 65);
+        doc.line(100, 45, 100, 70);
+        doc.line(140, 45, 140, 70);
+        
+        doc.text('RAZON SOCIAL:', 16, 52);
+        doc.text('INFRATELC SPA', 45, 52);
+        doc.text('RUT EMPRESA:', 142, 52);
+        doc.text('76.XXX.XXX-X', 170, 52);
         
         // Employee info
-        doc.setFontSize(14);
-        doc.text('DATOS DEL TRABAJADOR', 20, 55);
-        doc.setFontSize(10);
-        doc.text(`Nombre: ${item.employee_name}`, 20, 70);
-        doc.text(`RUT: ${item.employee_rut || 'No especificado'}`, 20, 80);
-        doc.text(`Cargo: ${item.position || 'No especificado'}`, 20, 90);
+        doc.text('R.U.T.', 16, 62);
+        doc.text('TRABAJADOR', 45, 62);
+        doc.text('C.C.', 175, 62);
+        doc.text(item.employee_rut || '00.000.000-0', 16, 68);
+        doc.text(item.employee_name.toUpperCase(), 45, 68);
+        doc.text('001', 175, 68);
         
-        // Earnings
-        doc.setFontSize(14);
-        doc.text('HABERES', 20, 110);
-        doc.setFontSize(10);
-        let yPos = 125;
-        doc.text(`Sueldo Base: $${item.base_salary?.toLocaleString('es-CL') || '0'}`, 20, yPos);
-        yPos += 10;
-        if (item.overtime_amount > 0) {
-          doc.text(`Horas Extra: $${item.overtime_amount.toLocaleString('es-CL')}`, 20, yPos);
-          yPos += 10;
-        }
-        doc.text(`Total Haberes: $${item.gross_taxable?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        // AFP and Health info table
+        doc.rect(14, 75, 182, 25);
+        doc.line(14, 85, 196, 85);
+        doc.line(14, 95, 196, 95);
+        doc.line(60, 75, 60, 100);
+        doc.line(120, 75, 120, 100);
+        doc.line(160, 75, 160, 100);
         
-        // Deductions
-        yPos += 20;
-        doc.setFontSize(14);
-        doc.text('DESCUENTOS', 20, yPos);
-        doc.setFontSize(10);
-        yPos += 15;
-        doc.text(`AFP: $${item.afp_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
-        yPos += 10;
-        doc.text(`Salud: $${item.health_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
-        yPos += 10;
-        doc.text(`Impuestos: $${item.tax_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
-        yPos += 10;
-        doc.text(`AFC: $${item.afc_deduction?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        doc.text('A.F.P.', 16, 82);
+        doc.text('ISAPRE', 122, 82);
+        doc.text('UNO', 16, 92);
+        doc.text('FONASA', 122, 92);
+        doc.text('10,49%', 16, 98);
+        doc.text(`${item.health_deduction?.toLocaleString('es-CL') || '0'}`, 122, 98);
+        doc.text('7%', 162, 98);
         
-        // Net pay
-        yPos += 20;
-        doc.setFontSize(14);
-        doc.text(`LÍQUIDO A PAGAR: $${item.net_pay?.toLocaleString('es-CL') || '0'}`, 20, yPos);
+        // Work days table
+        doc.rect(14, 105, 182, 25);
+        doc.line(14, 115, 196, 115);
+        doc.line(40, 105, 40, 130);
+        doc.line(70, 105, 70, 130);
+        doc.line(100, 105, 100, 130);
+        doc.line(130, 105, 130, 130);
+        doc.line(160, 105, 160, 130);
+        
+        doc.text('DIAS', 16, 112);
+        doc.text('HH EXTRAS', 42, 112);
+        doc.text('HH FALTADAS', 72, 112);
+        doc.text('CARGAS', 102, 112);
+        doc.text('IMPONIBLE', 132, 112);
+        doc.text('TRIBUTABLE', 162, 112);
+        
+        doc.text(item.worked_days?.toString() || '30', 20, 125);
+        doc.text(item.overtime_hours?.toString() || '0', 48, 125);
+        doc.text('0', 80, 125);
+        doc.text('0', 108, 125);
+        doc.text((item.gross_taxable || 0).toLocaleString('es-CL'), 135, 125);
+        doc.text((item.net_pay || 0).toLocaleString('es-CL'), 165, 125);
+        
+        // Earnings and deductions table
+        doc.rect(14, 135, 90, 80);
+        doc.rect(106, 135, 90, 80);
+        doc.line(14, 145, 104, 145);
+        doc.line(106, 145, 196, 145);
+        
+        // Earnings section
+        doc.setFont('helvetica', 'bold');
+        doc.text('HABERES', 45, 142);
+        doc.text('DESCUENTOS', 135, 142);
+        
+        doc.setFont('helvetica', 'normal');
+        let yPos = 155;
+        doc.text('SUELDO BASE', 16, yPos);
+        doc.text((item.base_salary || 0).toLocaleString('es-CL'), 75, yPos);
+        
+        yPos += 10;
+        const gratificationAmount = Math.round((item.base_salary || 0) * 0.25);
+        doc.text('GRATIFICACION LEGAL', 16, yPos);
+        doc.text(gratificationAmount.toLocaleString('es-CL'), 75, yPos);
+        
+        yPos += 10;
+        doc.text('TOTAL IMPONIBLE', 16, yPos);
+        doc.text((item.gross_taxable || 0).toLocaleString('es-CL'), 75, yPos);
+        
+        yPos += 10;
+        doc.text('TOTAL NO IMPONIBLE', 16, yPos);
+        doc.text('0', 75, yPos);
+        
+        // Deductions section
+        yPos = 165;
+        doc.text('PREVISION', 108, yPos);
+        doc.text((item.afp_deduction || 0).toLocaleString('es-CL'), 175, yPos);
+        
+        yPos += 10;
+        doc.text('SALUD', 108, yPos);
+        doc.text((item.health_deduction || 0).toLocaleString('es-CL'), 175, yPos);
+        
+        yPos += 10;
+        doc.text('SEGURO CESANTIA', 108, yPos);
+        doc.text('0', 175, yPos);
+        
+        yPos += 10;
+        const totalLegalDeductions = (item.afp_deduction || 0) + (item.health_deduction || 0);
+        doc.text('TOTAL DESC. LEGALES', 108, yPos);
+        doc.text(totalLegalDeductions.toLocaleString('es-CL'), 175, yPos);
+        
+        yPos += 10;
+        doc.text('TOTAL OTROS DESC.', 108, yPos);
+        doc.text('0', 175, yPos);
+        
+        // Totals
+        doc.setFont('helvetica', 'bold');
+        doc.text(`TOTAL HABERES: ${(item.gross_taxable || 0).toLocaleString('es-CL')}`, 14, 225);
+        doc.text(`TOTAL DESCUENTOS: ${totalLegalDeductions.toLocaleString('es-CL')}`, 14, 235);
+        doc.text(`FECHA: ${new Date().toLocaleDateString('es-CL')}`, 14, 245);
+        doc.text(`ALCANCE LIQUIDO: ${(item.net_pay || 0).toLocaleString('es-CL')}`, 14, 255);
+        
+        // Amount in words
+        const numberInWords = convertNumberToWords(item.net_pay || 0);
+        doc.text(`SON: ${numberInWords.toUpperCase()} PESOS.`, 14, 265);
+        
+        // Footer text
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text('Recibí conforme el alcance líquido de la presente liquidación, no teniendo cargo o cobro alguno que hacer por otro concepto.', 14, 280);
+        
+        // Signature lines
+        doc.setFontSize(10);
+        doc.text('FIRMA DEL EMPLEADOR', 40, 295);
+        doc.text('FIRMA DEL TRABAJADOR', 140, 295);
+        doc.line(14, 290, 80, 290);
+        doc.line(120, 290, 186, 290);
       });
 
       // Download PDF
       const fileName = employeeId 
-        ? `liquidacion-${payrollItems[0].employee_name.replace(/\s+/g, '_')}-${runId}.pdf`
-        : `liquidaciones-${runId}.pdf`;
+        ? `LIQ_${payrollRun.period}_${payrollItems[0].employee_name.replace(/\s+/g, '_')}.pdf`
+        : `LIQ_${payrollRun.period}_TODAS.pdf`;
       doc.save(fileName);
       
       toast({
         title: "Liquidación descargada",
-        description: `Se ha generado la liquidación exitosamente`
+        description: `Se ha generado la liquidación con formato oficial`
       });
     } catch (error) {
       console.error('Error generating pay slip:', error);
@@ -329,6 +450,66 @@ const PayrollManagement = () => {
         description: "No se pudo generar la liquidación",
         variant: "destructive"
       });
+    }
+  };
+
+  // Helper function to convert numbers to words (simplified version)
+  const convertNumberToWords = (num: number): string => {
+    if (num === 0) return "CERO";
+    
+    const units = ["", "UNO", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
+    const teens = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
+    const tens = ["", "", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
+    const hundreds = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
+    
+    const convertHundreds = (n: number): string => {
+      let result = "";
+      
+      if (n >= 100) {
+        if (n === 100) {
+          result += "CIEN";
+        } else {
+          result += hundreds[Math.floor(n / 100)];
+        }
+        n %= 100;
+        if (n > 0) result += " ";
+      }
+      
+      if (n >= 20) {
+        result += tens[Math.floor(n / 10)];
+        n %= 10;
+        if (n > 0) result += " Y " + units[n];
+      } else if (n >= 10) {
+        result += teens[n - 10];
+      } else if (n > 0) {
+        result += units[n];
+      }
+      
+      return result;
+    };
+    
+    if (num < 1000) {
+      return convertHundreds(num);
+    } else if (num < 1000000) {
+      const thousands = Math.floor(num / 1000);
+      const remainder = num % 1000;
+      let result = thousands === 1 ? "MIL" : convertHundreds(thousands) + " MIL";
+      if (remainder > 0) {
+        result += " " + convertHundreds(remainder);
+      }
+      return result;
+    } else {
+      const millions = Math.floor(num / 1000000);
+      const remainder = num % 1000000;
+      let result = millions === 1 ? "UN MILLON" : convertHundreds(millions) + " MILLONES";
+      if (remainder > 0) {
+        if (remainder >= 1000) {
+          result += " " + convertNumberToWords(remainder);
+        } else {
+          result += " " + convertHundreds(remainder);
+        }
+      }
+      return result;
     }
   };
 
