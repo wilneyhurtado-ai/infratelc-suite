@@ -39,3 +39,12 @@ enable_anonymous_sign_ins = false
 
 [functions.api]
 verify_jwt = true
+
+[functions.calculate-payroll]
+verify_jwt = true
+
+[functions.generate-payslip-pdf]
+verify_jwt = true
+
+[functions.send-payslips]
+verify_jwt = true
